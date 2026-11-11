@@ -1,0 +1,20 @@
+name: greenlight
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+requires_hermes: ">=0.21.5"
+description: Explicit green-light approval for xStocks trades. Simulate, score, approve in the Desktop pane, then release the unsigned transaction. Non-custodial.
+author: Datwebguy
+license: MIT
+homepage: https://github.com/Datwebguy/greenlight
+tags: [solana, xstocks, trading, approval, safety]
+provides_tools:
+  - propose_trade
+  - get_trade_status
+  - list_receipts
+provides_hooks:
+  - pre_tool_call
+config_schema:
+  daily_cap_usd: {type: float, default: 250, label: "Daily cap (USD)", description: "Maximum total USD value of approved plus pending proposals per UTC day."}
+  proposal_ttl_minutes: {type: int, default: 10, label: "Proposal lifetime (minutes)", description: "Pending proposals expire after this long."}
+  max_quote_drift_pct: {type: float, default: 1.0, label: "Max quote drift (%)", description: "On approval the order is rebuilt; if the fresh quote is worse than the approved one by more than this, release is refused."}
