@@ -22,3 +22,11 @@ Schema:
   }
 }
 ```
+
+### get_trade_status
+Looks up local proposal or signature.
+
+### list_receipts
+Returns recent local receipts.
+
+Handlers must always return `json.dumps(...)` and never raise.
