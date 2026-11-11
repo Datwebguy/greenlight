@@ -23,8 +23,8 @@ _GETTER = None
 ZERO_HASH = "0" * 64
 
 DEFAULTS = {
-    "daily_cap_usd": 250.0,
-    "max_trade_usd": 100.0,
+    "daily_cap_usd": 0.0,  # 0 = no daily cap
+    "max_trade_usd": 0.0,  # 0 = no per-trade limit
     "proposal_ttl_minutes": 10,
     "max_quote_drift_pct": 1.0,
     "default_wallet": "",
@@ -173,4 +173,6 @@ def daily_used(st):
 def cap_snapshot(st):
     cap = float(setting("daily_cap_usd"))
     used = daily_used(st)
+    if cap <= 0:  # no cap configured
+        return {"limit_usd": None, "used_usd": round(used, 2), "remaining_usd": None}
     return {"limit_usd": cap, "used_usd": round(used, 2), "remaining_usd": round(max(cap - used, 0.0), 2)}

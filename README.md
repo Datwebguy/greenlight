@@ -28,7 +28,8 @@ Approve in the Desktop pane. Prefer the terminal or a chat app? Type `/greenligh
 
 ## Why Greenlight
 - **Approval is a hard gate, not a prompt.** The transaction does not exist in local state until you approve, and is rebuilt fresh at that moment.
-- **You see what matters first:** quote, price, fee, slippage, a risk score with its factors, and how much of your daily cap is left.
+- **You see what matters first:** quote, price, fee, slippage, a risk score with its factors, and how much of your daily cap is left (if you set one).
+- **No built-in limits, only the ones you set.** Any amount, any xStock the API lists, any pay token the API accepts. Approval is the one thing that is always required.
 - **Guardrails you set:** daily cap, per-trade limit, allowed tickers, quote-drift limit.
 - **Works where you work:** Desktop pane and status-bar chip, plus `/greenlight` in the CLI and messaging gateways.
 - **Auditable:** hash-chained local receipts; any edit is detected.
@@ -56,14 +57,14 @@ Set under `plugins.entries.greenlight.settings` (or in the Desktop Plugins setti
 
 | Key | Default | Meaning |
 |---|---|---|
-| `daily_cap_usd` | 250 | Max USD value of approved plus pending proposals per UTC day |
+| `daily_cap_usd` | 0 (off) | Optional max USD value of approved plus pending proposals per UTC day |
 | `proposal_ttl_minutes` | 10 | Pending proposals expire after this long |
-| `max_trade_usd` | 100 | Reject any single trade above this value (0 disables) |
+| `max_trade_usd` | 0 (off) | Optional: reject any single trade above this value |
 | `default_wallet` | empty | Your public Solana address, used when a request names none |
 | `allowed_assets` | empty | Comma-separated tickers the plugin may propose (empty allows all) |
 | `max_quote_drift_pct` | 1.0 | Release is refused if the quote at approval is worse than the approved one by more than this |
 
-SOL-denominated legs have no USD quote, so they require `max_usd`, which is then used as the trade value for cap accounting.
+All limits are off until you set them. SOL-denominated legs have no USD quote, so when you have set a cap or per-trade limit they need `max_usd` to be checked against it; with no limits set they go through unpriced.
 
 ## How the flow stays safe
 1. `propose_trade` simulates the order against the live xStocks API and stores only the quote. No transaction is stored or returned.

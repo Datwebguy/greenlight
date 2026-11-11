@@ -34,7 +34,7 @@ User intent -> `propose_trade` (validates, checks per-trade limit, allowlist and
 ## Safety invariants
 - No private keys ever enter the plugin.
 - No unsigned transaction is stored or returned until approval.
-- Daily cap (approved plus pending), per-trade limit and optional asset allowlist are checked before a proposal is created.
+- Optional user-set limits (daily cap counting approved plus pending, per-trade limit, asset allowlist) are checked before a proposal is created. All are off by default; the plugin imposes no amount, asset or token restrictions of its own.
 - Approval is refused if the fresh quote drifted beyond `max_quote_drift_pct`.
 - A `pre_tool_call` gate blocks other tools from carrying an xStocks order link that no approved proposal released.
 - A `pre_llm_call` reminder tells the model which proposals are pending or approved, so it never treats an open proposal as approved.

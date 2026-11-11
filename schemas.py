@@ -13,7 +13,7 @@ PROPOSE_TRADE = {
             "asset": {"type": "string", "description": "xStocks ticker (e.g. NVDAx, AAPLx) or mint address."},
             "amount": {"type": "number", "description": "Amount to trade."},
             "side": {"type": "string", "enum": ["buy", "sell"]},
-            "pay_token": {"type": "string", "enum": ["USDC", "SOL"], "default": "USDC"},
+            "pay_token": {"type": "string", "description": "Token to pay with (buy) or receive (sell), e.g. USDC or SOL. Defaults to USDC.", "default": "USDC"},
             "wallet": {"type": "string", "description": "User's Solana wallet address. Optional when the user has configured a default wallet; otherwise ask the user for it."},
             "max_usd": {"type": "number", "description": "Optional hard cap in USD for this single trade."},
         },

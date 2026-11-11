@@ -16,8 +16,8 @@ provides_hooks:
   - pre_tool_call
   - pre_llm_call
 config_schema:
-  daily_cap_usd: {type: float, default: 250, label: "Daily cap (USD)", description: "Maximum total USD value of approved plus pending proposals per UTC day."}
-  max_trade_usd: {type: float, default: 100, label: "Per-trade limit (USD)", description: "Reject any single trade worth more than this. 0 disables the limit."}
+  daily_cap_usd: {type: float, default: 0, label: "Daily cap (USD)", description: "Optional. Maximum total USD value of approved plus pending proposals per UTC day. 0 means no cap."}
+  max_trade_usd: {type: float, default: 0, label: "Per-trade limit (USD)", description: "Optional. Reject any single trade worth more than this. 0 means no limit."}
   default_wallet: {type: str, default: "", label: "Default wallet", description: "Your Solana wallet address, used when the request does not name one. Public address only, never a key."}
   allowed_assets: {type: str, default: "", label: "Allowed assets", description: "Comma-separated tickers (e.g. NVDAx,AAPLx). Empty allows every xStock."}
   proposal_ttl_minutes: {type: int, default: 10, label: "Proposal lifetime (minutes)", description: "Pending proposals expire after this long."}

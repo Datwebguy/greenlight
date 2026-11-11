@@ -10,6 +10,7 @@ const el = (tag, props, ...children) => jsxs(tag, { ...props, children })
 const muted = 'text-(--ui-text-tertiary)'
 const short = (w) => (w && w.length > 12 ? `${w.slice(0, 4)}…${w.slice(-4)}` : w || '')
 const usd = (n) => `$${Number(n).toFixed(2)}`
+const capText = (c) => (c.limit_usd == null ? `no cap set (${usd(c.used_usd)} today)` : `${usd(c.used_usd)} / ${usd(c.limit_usd)}`)
 
 function Row({ label, value }) {
   return el('div', { className: 'flex justify-between gap-3 text-xs' },
@@ -41,10 +42,10 @@ function Proposal({ p, busy, onApprove, onReject }) {
     jsx(Row, { label: 'Fee', value: q.fee }),
     p.implied_price_usd && jsx(Row, { label: 'Price (est.)', value: `${usd(p.implied_price_usd)} / share` }),
     jsx(Row, { label: 'Slippage', value: `${q.slippageBps} bps` }),
-    jsx(Row, { label: 'Trade value', value: usd(p.notional_usd) }),
+    jsx(Row, { label: 'Trade value', value: p.unpriced ? 'not priced in USD' : usd(p.notional_usd) }),
     jsx(Row, { label: 'Wallet', value: short(p.wallet) }),
     jsx(RiskBar, { risk: p.risk }),
-    jsx(Row, { label: 'Daily cap remaining after', value: `${usd(p.cap.remaining_after_usd)} of ${usd(p.cap.limit_usd)}` }),
+    p.cap.limit_usd != null && jsx(Row, { label: 'Daily cap remaining after', value: `${usd(p.cap.remaining_after_usd)} of ${usd(p.cap.limit_usd)}` }),
     el('div', { className: 'flex gap-2 pt-1' },
       jsx(Button, { disabled: busy, onClick: () => onApprove(p.id), children: 'Approve' }),
       jsx(Button, { variant: 'outline', disabled: busy, onClick: () => onReject(p.id), children: 'Reject' })),
@@ -76,7 +77,7 @@ function Receipts({ ctx }) {
       jsx('span', { className: muted, children: rc.chain_ok ? 'chain verified' : 'CHAIN BROKEN' })),
     ...rc.receipts.map(r => jsx('div', {
       key: r.id, className: 'font-mono text-[0.6875rem]',
-      children: `${r.ts.slice(11, 19)} ${r.event} ${r.proposal_id}${r.data && r.data.notional_usd ? ' ' + usd(r.data.notional_usd) : ''}`
+      children: `${r.ts.slice(11, 19)} ${r.event} ${r.proposal_id}${r.data && r.data.notional_usd != null ? ' ' + usd(r.data.notional_usd) : ''}`
     })))
 }
 
@@ -112,7 +113,7 @@ function Pane({ ctx }) {
   return el('div', { className: 'flex h-full flex-col gap-3 overflow-auto p-3 text-sm' },
     el('div', { className: 'flex items-center justify-between' },
       jsx('span', { className: 'font-medium', children: 'Greenlight' }),
-      cap && jsx('span', { className: `text-xs ${muted}`, children: `Daily cap: ${usd(cap.used_usd)} / ${usd(cap.limit_usd)}` })),
+      cap && jsx('span', { className: `text-xs ${muted}`, children: `Daily cap: ${capText(cap)}` })),
     error && jsx('div', { className: 'text-xs text-(--ui-accent)', children: error }),
     data.pending.length === 0 && data.approved.length === 0 &&
       jsx('div', { className: muted, children: 'No trades waiting. Ask Hermes: "Propose buying $25 of NVDAx".' }),

@@ -15,7 +15,8 @@ class FakeSdk:
 
     def call(self, op, payload=None, timeout=45):
         if op == "assets":
-            return {"assets": [{"symbol": "NVDAx", "mint": "Xs" + "a" * 40}], "payTokens": []}
+            return {"assets": [{"symbol": "NVDAx", "mint": "Xs" + "a" * 40}],
+                    "payTokens": [{"symbol": "USDC"}, {"symbol": "SOL"}]}
         if op == "buildOrder":
             self.calls += 1
             return {"status": "ready", "transaction": "TX%d" % self.calls,
@@ -32,7 +33,8 @@ class FakeSdk:
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("GREENLIGHT_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GREENLIGHT_MAX_TRADE_USD", "0")  # per-trade limit off unless a test sets it
+    monkeypatch.setenv("GREENLIGHT_DAILY_CAP_USD", "250")  # limits are opt-in; most tests turn the cap on
+    monkeypatch.setenv("GREENLIGHT_MAX_TRADE_USD", "0")
     fake = FakeSdk()
     monkeypatch.setattr(bridge, "call", fake.call)
     service._assets_cache.update(ts=0.0, data=None)
@@ -108,10 +110,28 @@ def test_receipts_chain_and_tamper_detection(tmp_path):
     assert json.loads(tools.list_receipts({}))["chain_ok"] is False
 
 
-def test_sol_requires_max_usd():
-    out = propose(pay_token="SOL")
+def test_sol_needs_max_usd_only_when_a_limit_is_set():
+    out = propose(pay_token="SOL")  # cap is on in this fixture
     assert out["error"] == "max_usd_required"
     assert propose(pay_token="SOL", max_usd=40)["notional_usd"] == 40
+
+
+def test_no_limits_by_default(monkeypatch):
+    monkeypatch.delenv("GREENLIGHT_DAILY_CAP_USD")
+    monkeypatch.delenv("GREENLIGHT_MAX_TRADE_USD")
+    big = propose(amount=100000)
+    assert big["status"] == "pending_approval" and big["cap"]["limit_usd"] is None
+    assert "no daily cap" in big["summary"]
+    odd = propose(amount=12.34, pay_token="SOL")  # unpriced SOL leg is fine with no limits
+    assert odd["status"] == "pending_approval" and odd["notional_usd"] is None
+    assert propose(amount=0.01)["status"] == "pending_approval"
+    assert "No daily cap" in service.slash("")
+    assert service.approve(big["proposal_id"])["status"] == "approved"
+
+
+def test_pay_token_comes_from_live_api():
+    assert propose(pay_token="DOGE")["error"] == "invalid_pay_token"
+    assert propose(pay_token="usdc")["status"] == "pending_approval"
 
 
 def test_validation_and_never_raises(monkeypatch):

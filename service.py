@@ -71,9 +71,9 @@ def _validate(args):
     side = args.get("side")
     if side not in ("buy", "sell"):
         raise GreenlightError("invalid_side", "side must be 'buy' or 'sell'")
-    pay_token = args.get("pay_token") or "USDC"
-    if pay_token not in ("USDC", "SOL"):
-        raise GreenlightError("invalid_pay_token", "pay_token must be USDC or SOL")
+    pay_token = str(args.get("pay_token") or "USDC").strip().upper()
+    if not pay_token.isalnum():
+        raise GreenlightError("invalid_pay_token", "pay_token must be a token symbol such as USDC or SOL")
     wallet = str(args.get("wallet") or "").strip() or str(state.setting("default_wallet") or "").strip()
     if not wallet:
         raise GreenlightError("wallet_required", "Ask the user for their Solana wallet address (or set default_wallet)")
@@ -93,7 +93,7 @@ def _validate(args):
 def _public(p, st=None):
     """Proposal view that never contains transaction material (see _release_view)."""
     keys = ("id", "status", "asset", "side", "amount", "pay_token", "wallet", "quote", "notional_usd",
-            "risk", "cap", "created_at", "expires_at", "approved_at", "rejected_at", "signature", "settlement")
+            "risk", "cap", "unpriced", "created_at", "expires_at", "approved_at", "rejected_at", "signature", "settlement")
     view = {k: p[k] for k in keys if k in p}
     view["implied_price_usd"] = _implied_price(p["quote"])
     view["seconds_left"] = max(0, int(p["expires_at_ts"] - time.time())) if p["status"] == "pending" else 0
@@ -105,6 +105,10 @@ def _public(p, st=None):
 def propose_trade(args):
     asset, amount, side, pay_token, wallet, max_usd = _validate(args)
     symbol = _resolve_asset(asset)
+    # Accepted pay tokens come from the live API, not a hardcoded list.
+    accepted = [t["symbol"].upper() for t in (_assets_cache["data"] or {}).get("payTokens", [])]
+    if accepted and pay_token not in accepted:
+        raise GreenlightError("invalid_pay_token", "pay_token must be one of: %s" % ", ".join(accepted))
     allowed = [a.strip().lower() for a in str(state.setting("allowed_assets") or "").split(",") if a.strip()]
     if allowed and symbol.lower().rstrip("x") not in [a.rstrip("x") for a in allowed]:
         raise GreenlightError("asset_not_allowed", "%s is not in the allowed_assets list" % symbol)
@@ -116,9 +120,13 @@ def propose_trade(args):
     has_link = bool(order.get("solanaPayUrl"))
 
     notional, why = risk.notional_usd(side, pay_token, amount, details, max_usd)
-    if notional is None:
-        raise GreenlightError("max_usd_required", why)
     per_trade = float(state.setting("max_trade_usd"))
+    limits_on = per_trade > 0 or float(state.setting("daily_cap_usd")) > 0
+    unpriced = notional is None
+    if unpriced:
+        if limits_on:  # a limit is configured, so the trade must be priced to be checked against it
+            raise GreenlightError("max_usd_required", why)
+        notional = 0.0  # no limits set: nothing to enforce, the trade is simply not priced in USD
     if per_trade > 0 and notional > per_trade + 1e-9:
         raise GreenlightError("over_trade_limit", "Trade value $%.2f exceeds the per-trade limit $%.2f" % (notional, per_trade))
     if max_usd and notional > max_usd + 1e-9:
@@ -127,10 +135,11 @@ def propose_trade(args):
     with state.transaction() as st:
         state.expire_stale(st)
         cap = state.cap_snapshot(st)
-        if notional > cap["remaining_usd"] + 1e-9:
+        if cap["remaining_usd"] is not None and notional > cap["remaining_usd"] + 1e-9:
             return {"status": "rejected", "reason": "daily_cap_exceeded", "notional_usd": round(notional, 2),
                     "cap": cap, "message": "This trade would exceed the local daily cap. No proposal was created."}
         scored = risk.score(notional, cap["limit_usd"], details, pay_token, has_link)
+        remaining_after = None if cap["remaining_usd"] is None else round(cap["remaining_usd"] - notional, 2)
         t = state.now()
         pid = "gl_" + uuid.uuid4().hex[:8]
         ttl = int(state.setting("proposal_ttl_minutes")) * 60
@@ -139,14 +148,15 @@ def propose_trade(args):
             "pay_token": pay_token, "wallet": wallet, "quote": details, "notional_usd": round(notional, 2),
             "risk": scored, "created_at": state.iso(t), "created_at_ts": t,
             "expires_at": state.iso(t + ttl), "expires_at_ts": t + ttl,
-            "cap": {"limit_usd": cap["limit_usd"], "used_usd": cap["used_usd"],
-                    "remaining_after_usd": round(cap["remaining_usd"] - notional, 2)},
+            "unpriced": unpriced,
+            "cap": {"limit_usd": cap["limit_usd"], "used_usd": cap["used_usd"], "remaining_after_usd": remaining_after},
         }
         proposal = _public(st["proposals"][pid])
     _notify("proposal.created", {"id": pid})
     return {
         "status": "pending_approval", "proposal_id": pid, "summary": _summary(proposal), "quote": details, "risk": scored,
-        "notional_usd": round(notional, 2), "daily_remaining_usd": proposal["cap"]["remaining_after_usd"],
+        "notional_usd": None if unpriced else round(notional, 2),
+        "daily_remaining_usd": proposal["cap"]["remaining_after_usd"],
         "cap": proposal["cap"], "expires_at": proposal["expires_at"],
         "next": "Ask the user to approve or reject proposal %s in the Greenlight Desktop pane, then call "
                 "get_trade_status. No transaction has been released." % pid,
@@ -156,11 +166,13 @@ def propose_trade(args):
 def _summary(p):
     q = p["quote"]
     price = _implied_price(q)
-    return ("%s %s: pay %s, receive about %s%s. Risk %s/100 (%s). $%.2f of the $%.2f daily cap remains. "
+    cap = p["cap"]
+    cap_text = ("$%.2f of the $%.2f daily cap remains" % (cap["remaining_after_usd"], cap["limit_usd"])
+                if cap["limit_usd"] is not None else "no daily cap is set")
+    return ("%s %s: pay %s, receive about %s%s. Risk %s/100 (%s); %s. "
             "Waiting for the user to approve in Greenlight." % (
                 p["side"].upper(), p["asset"], q.get("amountIn"), q.get("expectedOut"),
-                (" (~$%.2f each)" % price) if price else "", p["risk"]["score"], p["risk"]["level"],
-                p["cap"]["remaining_after_usd"], p["cap"]["limit_usd"]))
+                (" (~$%.2f each)" % price) if price else "", p["risk"]["score"], p["risk"]["level"], cap_text))
 
 
 def _implied_price(q):
@@ -363,7 +375,9 @@ def slash(raw):
             rc = list_receipts(5)
             return "\n".join("%s %s %s" % (r["ts"], r["event"], r["proposal_id"]) for r in rc["receipts"]) or "No receipts yet."
         data = pending()
-        lines = ["Daily cap: $%.2f used of $%.2f." % (data["cap"]["used_usd"], data["cap"]["limit_usd"])]
+        c = data["cap"]
+        lines = ["Daily cap: $%.2f used of $%.2f." % (c["used_usd"], c["limit_usd"]) if c["limit_usd"] is not None
+                 else "No daily cap set ($%.2f approved or pending today)." % c["used_usd"]]
         for p in data["pending"]:
             q = p["quote"]
             lines.append("%s  %s %s  pay %s -> %s  risk %s/%s  %ss left" % (

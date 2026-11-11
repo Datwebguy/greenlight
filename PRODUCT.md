@@ -22,7 +22,7 @@ Greenlight turns a trade request into a simulated proposal with risk score and r
 - Domain-specific (xStocks) rather than generic safety.
 - Native Desktop approval surface.
 - Mandatory simulation before any transaction material is released.
-- Local receipts and daily caps.
+- Local receipts and optional user-set caps.
 - Built on the official @xstocker/agent-sdk (unsigned only).
 
 ## Non-goals

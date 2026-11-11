@@ -32,9 +32,11 @@ def notional_usd(side, pay_token, amount, details, max_usd):
 def score(notional, cap, details, pay_token, solana_pay_available):
     """Return {score 0-100, level, factors[]}. Higher is riskier."""
     factors = []
-    ratio = (notional / cap) if cap else 1.0
-    size_pts = min(40, round(ratio * 40))
-    factors.append({"name": "size", "points": size_pts, "note": "%.0f%% of daily cap" % (ratio * 100)})
+    if cap:
+        ratio = notional / cap
+        factors.append({"name": "size", "points": min(40, round(ratio * 40)), "note": "%.0f%% of daily cap" % (ratio * 100)})
+    else:
+        factors.append({"name": "size", "points": 0, "note": "no daily cap set"})
 
     slip = details.get("slippageBps")
     slip_pts = min(25, round((slip or 0) / 20))
