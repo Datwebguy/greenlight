@@ -22,7 +22,14 @@ _LOCK = threading.RLock()
 _GETTER = None
 ZERO_HASH = "0" * 64
 
-DEFAULTS = {"daily_cap_usd": 250.0, "proposal_ttl_minutes": 10, "max_quote_drift_pct": 1.0}
+DEFAULTS = {
+    "daily_cap_usd": 250.0,
+    "max_trade_usd": 100.0,
+    "proposal_ttl_minutes": 10,
+    "max_quote_drift_pct": 1.0,
+    "default_wallet": "",
+    "allowed_assets": "",
+}
 
 
 def data_dir():

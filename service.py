@@ -74,7 +74,9 @@ def _validate(args):
     pay_token = args.get("pay_token") or "USDC"
     if pay_token not in ("USDC", "SOL"):
         raise GreenlightError("invalid_pay_token", "pay_token must be USDC or SOL")
-    wallet = str(args.get("wallet") or "").strip()
+    wallet = str(args.get("wallet") or "").strip() or str(state.setting("default_wallet") or "").strip()
+    if not wallet:
+        raise GreenlightError("wallet_required", "Ask the user for their Solana wallet address (or set default_wallet)")
     if not _B58.match(wallet):
         raise GreenlightError("invalid_wallet", "wallet must be a base58 Solana address")
     max_usd = args.get("max_usd")
@@ -93,6 +95,7 @@ def _public(p, st=None):
     keys = ("id", "status", "asset", "side", "amount", "pay_token", "wallet", "quote", "notional_usd",
             "risk", "cap", "created_at", "expires_at", "approved_at", "rejected_at", "signature", "settlement")
     view = {k: p[k] for k in keys if k in p}
+    view["implied_price_usd"] = _implied_price(p["quote"])
     view["seconds_left"] = max(0, int(p["expires_at_ts"] - time.time())) if p["status"] == "pending" else 0
     return view
 
@@ -102,6 +105,9 @@ def _public(p, st=None):
 def propose_trade(args):
     asset, amount, side, pay_token, wallet, max_usd = _validate(args)
     symbol = _resolve_asset(asset)
+    allowed = [a.strip().lower() for a in str(state.setting("allowed_assets") or "").split(",") if a.strip()]
+    if allowed and symbol.lower().rstrip("x") not in [a.rstrip("x") for a in allowed]:
+        raise GreenlightError("asset_not_allowed", "%s is not in the allowed_assets list" % symbol)
 
     # Mandatory simulation: build the order against the live API to get a real
     # route, quote, fee and slippage. The unsigned transaction is discarded here.
@@ -112,6 +118,9 @@ def propose_trade(args):
     notional, why = risk.notional_usd(side, pay_token, amount, details, max_usd)
     if notional is None:
         raise GreenlightError("max_usd_required", why)
+    per_trade = float(state.setting("max_trade_usd"))
+    if per_trade > 0 and notional > per_trade + 1e-9:
+        raise GreenlightError("over_trade_limit", "Trade value $%.2f exceeds the per-trade limit $%.2f" % (notional, per_trade))
     if max_usd and notional > max_usd + 1e-9:
         raise GreenlightError("over_trade_limit", "Trade value $%.2f exceeds max_usd $%.2f" % (notional, max_usd))
 
@@ -136,12 +145,32 @@ def propose_trade(args):
         proposal = _public(st["proposals"][pid])
     _notify("proposal.created", {"id": pid})
     return {
-        "status": "pending_approval", "proposal_id": pid, "quote": details, "risk": scored,
+        "status": "pending_approval", "proposal_id": pid, "summary": _summary(proposal), "quote": details, "risk": scored,
         "notional_usd": round(notional, 2), "daily_remaining_usd": proposal["cap"]["remaining_after_usd"],
         "cap": proposal["cap"], "expires_at": proposal["expires_at"],
         "next": "Ask the user to approve or reject proposal %s in the Greenlight Desktop pane, then call "
                 "get_trade_status. No transaction has been released." % pid,
     }
+
+
+def _summary(p):
+    q = p["quote"]
+    price = _implied_price(q)
+    return ("%s %s: pay %s, receive about %s%s. Risk %s/100 (%s). $%.2f of the $%.2f daily cap remains. "
+            "Waiting for the user to approve in Greenlight." % (
+                p["side"].upper(), p["asset"], q.get("amountIn"), q.get("expectedOut"),
+                (" (~$%.2f each)" % price) if price else "", p["risk"]["score"], p["risk"]["level"],
+                p["cap"]["remaining_after_usd"], p["cap"]["limit_usd"]))
+
+
+def _implied_price(q):
+    spent, su = risk.parse_amount(q.get("amountIn"))
+    got, gu = risk.parse_amount(q.get("expectedOut"))
+    if spent and got and su == "USDC" and gu != "USDC":
+        return spent / got
+    if spent and got and gu == "USDC" and su != "USDC":
+        return got / spent
+    return None
 
 
 # ------------------------------------------------------- approve / reject
@@ -290,3 +319,64 @@ def gate_check(tool_name, args):
             return ("Blocked by Greenlight: this xStocks order link was not released by an approved Greenlight "
                     "proposal. Call propose_trade and get the user's approval first.")
     return None
+
+
+# ------------------------------------------------------------ llm context
+
+def llm_context():
+    """pre_llm_call reminder so the model never treats an open proposal as approved."""
+    with state.transaction(write=False) as st:
+        now = state.now()
+        pend = [p for p in st["proposals"].values() if p["status"] == "pending" and p["expires_at_ts"] > now]
+        appr = [p for p in st["proposals"].values() if p["status"] == "approved" and not p.get("signature")]
+    lines = []
+    for p in pend:
+        lines.append("Proposal %s (%s %s $%.2f) is PENDING the user's approval. It is not approved; do not treat any "
+                     "transaction as available." % (p["id"], p["side"], p["asset"], p["notional_usd"]))
+    for p in appr:
+        lines.append("Proposal %s was approved by the user; call get_trade_status to fetch the unsigned "
+                     "transaction/solanaPayUrl for their wallet." % p["id"])
+    return "Greenlight:\n" + "\n".join(lines) if lines else None
+
+
+# ---------------------------------------------------------- slash command
+
+def slash(raw):
+    """/greenlight [status|approve [id]|reject [id]|receipts|cap]: human-typed approval for non-Desktop surfaces."""
+    parts = (raw or "").split()
+    verb = parts[0].lower() if parts else "status"
+    pid = parts[1] if len(parts) > 1 else None
+    try:
+        if verb in ("approve", "reject"):
+            if not pid:
+                items = pending()["pending"]
+                if len(items) != 1:
+                    return "Give a proposal id: /greenlight %s <id> (%d pending)." % (verb, len(items))
+                pid = items[0]["id"]
+            if verb == "reject":
+                reject(pid)
+                return "Rejected %s. Nothing was released." % pid
+            r = approve(pid)
+            return ("Approved %s. Open this link in your wallet to sign (Greenlight never signs):\n%s"
+                    % (pid, r.get("solanaPayUrl") or "(no link; ask the agent for the unsigned transaction)"))
+        if verb == "receipts":
+            rc = list_receipts(5)
+            return "\n".join("%s %s %s" % (r["ts"], r["event"], r["proposal_id"]) for r in rc["receipts"]) or "No receipts yet."
+        data = pending()
+        lines = ["Daily cap: $%.2f used of $%.2f." % (data["cap"]["used_usd"], data["cap"]["limit_usd"])]
+        for p in data["pending"]:
+            q = p["quote"]
+            lines.append("%s  %s %s  pay %s -> %s  risk %s/%s  %ss left" % (
+                p["id"], p["side"], p["asset"], q.get("amountIn"), q.get("expectedOut"),
+                p["risk"]["score"], p["risk"]["level"], p["seconds_left"]))
+        if not data["pending"]:
+            lines.append("No trades waiting.")
+        else:
+            lines.append("Use /greenlight approve <id> or /greenlight reject <id>.")
+        return "\n".join(lines)
+    except GreenlightError as e:
+        return "Greenlight: %s" % e.message
+    except bridge.BridgeError as e:
+        return "Greenlight: %s" % e.message
+    except Exception as e:  # never raise out of a command
+        return "Greenlight error: %s" % e

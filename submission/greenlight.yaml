@@ -1,0 +1,22 @@
+# Copy to plugin-catalog/greenlight.yaml in NousResearch/hermes-agent.
+# Replace sha with the full 40-character commit you want pinned (git rev-parse HEAD).
+name: greenlight
+repo: https://github.com/Datwebguy/greenlight
+sha: "REPLACE_WITH_FULL_40_CHAR_SHA"
+subdir: ""
+description: Explicit green-light approval for xStocks trades. Simulate, risk-score, approve in a Desktop pane, then release the unsigned transaction.
+maintainer: Datwebguy
+tier: community
+category: tools
+requires_hermes: ">=0.21.5"
+docs_url: https://github.com/Datwebguy/greenlight#readme
+version: "0.1.0"
+readme: true
+title: "Greenlight"
+known_issues:
+  - "Needs Node.js 18+ and npm on first use to install @xstocker/agent-sdk."
+capabilities:
+  provides_tools: [propose_trade, get_trade_status, list_receipts]
+  provides_hooks: [pre_tool_call, pre_llm_call]
+  provides_middleware: []
+  requires_env: []

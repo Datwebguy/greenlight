@@ -32,6 +32,7 @@ class FakeSdk:
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("GREENLIGHT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GREENLIGHT_MAX_TRADE_USD", "0")  # per-trade limit off unless a test sets it
     fake = FakeSdk()
     monkeypatch.setattr(bridge, "call", fake.call)
     service._assets_cache.update(ts=0.0, data=None)
@@ -165,3 +166,69 @@ def test_pane_backend_routes(env, monkeypatch):
     assert ok["status"] == "approved" and ok["solanaPayUrl"]
     assert c.post("/proposals/%s/approve" % pid).status_code == 409
     assert c.get("/receipts").json()["chain_ok"] is True
+
+
+def test_default_wallet_and_wallet_required(monkeypatch):
+    out = json.loads(tools.propose_trade({"asset": "NVDAx", "amount": 25, "side": "buy"}))
+    assert out["error"] == "wallet_required"
+    monkeypatch.setenv("GREENLIGHT_DEFAULT_WALLET", WALLET)
+    out = json.loads(tools.propose_trade({"asset": "NVDAx", "amount": 25, "side": "buy"}))
+    assert out["status"] == "pending_approval" and "NVDAx" in out["summary"]
+
+
+def test_per_trade_limit_and_allowlist(monkeypatch):
+    monkeypatch.setenv("GREENLIGHT_MAX_TRADE_USD", "100")
+    assert propose(amount=150)["error"] == "over_trade_limit"
+    monkeypatch.setenv("GREENLIGHT_ALLOWED_ASSETS", "AAPLx")
+    assert propose()["error"] == "asset_not_allowed"
+
+
+def test_llm_context_tracks_state():
+    assert gl._llm_context() is None
+    pid = propose()["proposal_id"]
+    assert pid in gl._llm_context()["context"] and "PENDING" in gl._llm_context()["context"]
+    service.approve(pid)
+    assert "get_trade_status" in gl._llm_context()["context"]
+
+
+def test_slash_command_flow():
+    pid = propose()["proposal_id"]
+    assert pid in service.slash("")
+    assert "solana:" in service.slash("approve")
+    assert "Rejected" in service.slash("reject " + propose()["proposal_id"])
+    assert "approved" in service.slash("receipts")
+    assert "not found" not in service.slash("nonsense").lower()
+
+
+def test_register_matches_manifest():
+    from pathlib import Path
+
+    import yaml
+
+    manifest = yaml.safe_load((Path(gl.__file__).parent / "plugin.yaml").read_text())
+
+    class Ctx:
+        def __init__(self):
+            self.tools, self.hooks, self.cmds, self.skills = [], [], [], []
+
+        def get_config(self, key, default=None):
+            return default
+
+        def register_tool(self, name, **kw):
+            assert callable(kw["handler"]) and kw["schema"]["name"] == name
+            self.tools.append(name)
+
+        def register_hook(self, name, fn):
+            self.hooks.append(name)
+
+        def register_command(self, name, **kw):
+            self.cmds.append(name)
+
+        def register_skill(self, name, path):
+            self.skills.append(name)
+
+    ctx = Ctx()
+    gl.register(ctx)
+    assert sorted(ctx.tools) == sorted(manifest["provides_tools"])
+    assert sorted(ctx.hooks) == sorted(manifest["provides_hooks"])
+    assert ctx.cmds == ["greenlight"] and ctx.skills == ["greenlight"]

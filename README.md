@@ -16,13 +16,22 @@ Greenlight turns a trade request into a simulated proposal with risk score and r
 ## Quick start
 ```bash
 hermes plugins install https://github.com/Datwebguy/greenlight
+hermes plugins enable greenlight
 ```
+Then turn on **Greenlight** in the Desktop app under Capabilities > Plugins, and set your public wallet address as `default_wallet` in the plugin's settings page.
 
 Then ask Hermes:
 ```
 Propose buying $25 of NVDAx
 ```
-Approve in the Desktop pane.
+Approve in the Desktop pane. Prefer the terminal or a chat app? Type `/greenlight approve` (or `/greenlight reject`) instead.
+
+## Why Greenlight
+- **Approval is a hard gate, not a prompt.** The transaction does not exist in local state until you approve, and is rebuilt fresh at that moment.
+- **You see what matters first:** quote, price, fee, slippage, a risk score with its factors, and how much of your daily cap is left.
+- **Guardrails you set:** daily cap, per-trade limit, allowed tickers, quote-drift limit.
+- **Works where you work:** Desktop pane and status-bar chip, plus `/greenlight` in the CLI and messaging gateways.
+- **Auditable:** hash-chained local receipts; any edit is detected.
 
 ## Surfaces used
 - **Tools:** `propose_trade`, `get_trade_status`, `list_receipts`
@@ -49,6 +58,9 @@ Set under `plugins.entries.greenlight.settings` (or in the Desktop Plugins setti
 |---|---|---|
 | `daily_cap_usd` | 250 | Max USD value of approved plus pending proposals per UTC day |
 | `proposal_ttl_minutes` | 10 | Pending proposals expire after this long |
+| `max_trade_usd` | 100 | Reject any single trade above this value (0 disables) |
+| `default_wallet` | empty | Your public Solana address, used when a request names none |
+| `allowed_assets` | empty | Comma-separated tickers the plugin may propose (empty allows all) |
 | `max_quote_drift_pct` | 1.0 | Release is refused if the quote at approval is worse than the approved one by more than this |
 
 SOL-denominated legs have no USD quote, so they require `max_usd`, which is then used as the trade value for cap accounting.
@@ -58,7 +70,10 @@ SOL-denominated legs have no USD quote, so they require `max_usd`, which is then
 2. The Desktop pane shows quote, risk score and cap. Approve or Reject updates local state.
 3. On approval the order is rebuilt fresh (unsigned transactions expire in about a minute) and released only if the quote has not drifted.
 4. Every decision writes a hash-chained local receipt; `list_receipts` reports whether the chain verifies.
-5. A `pre_tool_call` hook blocks any other tool from carrying an xStocks order link that was not released by an approved proposal.
+5. A `pre_llm_call` reminder keeps the model honest about open proposals, and a `pre_tool_call` hook blocks any other tool from carrying an xStocks order link that was not released by an approved proposal.
+
+## Slash command
+`/greenlight` shows pending trades and your cap. `/greenlight approve [id]`, `/greenlight reject [id]` and `/greenlight receipts` do what they say. With exactly one pending trade the id can be omitted.
 
 ## Disclosure
 - Network: calls `api.xstocker.com` and `xstocker.com` through `@xstocker/agent-sdk`. No other third-party services, no telemetry.
@@ -68,6 +83,6 @@ SOL-denominated legs have no USD quote, so they require `max_usd`, which is then
 
 ## Development
 ```bash
-pip install pytest fastapi httpx
+pip install pytest fastapi httpx pyyaml
 python -m pytest tests
 ```

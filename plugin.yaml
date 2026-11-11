@@ -14,7 +14,11 @@ provides_tools:
   - list_receipts
 provides_hooks:
   - pre_tool_call
+  - pre_llm_call
 config_schema:
   daily_cap_usd: {type: float, default: 250, label: "Daily cap (USD)", description: "Maximum total USD value of approved plus pending proposals per UTC day."}
+  max_trade_usd: {type: float, default: 100, label: "Per-trade limit (USD)", description: "Reject any single trade worth more than this. 0 disables the limit."}
+  default_wallet: {type: str, default: "", label: "Default wallet", description: "Your Solana wallet address, used when the request does not name one. Public address only, never a key."}
+  allowed_assets: {type: str, default: "", label: "Allowed assets", description: "Comma-separated tickers (e.g. NVDAx,AAPLx). Empty allows every xStock."}
   proposal_ttl_minutes: {type: int, default: 10, label: "Proposal lifetime (minutes)", description: "Pending proposals expire after this long."}
   max_quote_drift_pct: {type: float, default: 1.0, label: "Max quote drift (%)", description: "On approval the order is rebuilt; if the fresh quote is worse than the approved one by more than this, release is refused."}

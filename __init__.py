@@ -18,6 +18,16 @@ def _gate(tool_name, args, task_id=None, **kwargs):
     return {"action": "block", "message": message} if message else None
 
 
+def _llm_context(**kwargs):
+    """pre_llm_call: keep the model honest about open proposals."""
+    try:
+        text = service.llm_context()
+    except Exception:
+        logger.exception("greenlight context failed")
+        return None
+    return {"context": text} if text else None
+
+
 def register(ctx):
     state.configure(lambda key, default=None: ctx.get_config(key, default))
     for schema, handler in (
@@ -27,6 +37,11 @@ def register(ctx):
     ):
         ctx.register_tool(name=schema["name"], toolset="greenlight", schema=schema, handler=handler)
     ctx.register_hook("pre_tool_call", _gate)
+    ctx.register_hook("pre_llm_call", _llm_context)
+    ctx.register_command(
+        "greenlight", handler=lambda raw: service.slash(raw),
+        description="Review and approve or reject pending xStocks trades", args_hint="[status|approve|reject|receipts] [id]",
+    )
 
     skills_dir = Path(__file__).parent / "skills"
     if skills_dir.is_dir():
