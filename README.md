@@ -2,77 +2,108 @@
 
 # Greenlight
 
-**Explicit approval for xStocks trades inside Hermes Agent.**
+**You approve every trade. Nothing happens without your yes.**
 
-![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Hermes plugin](https://img.shields.io/badge/Hermes-plugin-blue) ![Non-custodial](https://img.shields.io/badge/non--custodial-no%20keys-success) ![Solana](https://img.shields.io/badge/Solana-xStocks-purple)
+![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Hermes plugin](https://img.shields.io/badge/Hermes-plugin-blue) ![No keys](https://img.shields.io/badge/never%20holds-your%20keys-success) ![Solana](https://img.shields.io/badge/Solana-xStocks-purple)
 
-Greenlight turns a trade request into a simulated proposal with a risk score, surfaces it in a native Hermes Desktop pane, and releases an unsigned transaction only after you give the green light. It never holds, reads or uses a private key.
+Greenlight adds a safety step to trading xStocks (tokenized US stocks on Solana, like NVDAx and AAPLx) with Hermes. Ask Hermes for a trade and Greenlight shows you exactly what would happen: what you pay, what you get, the fees and a simple risk check. Only when you press **Approve** do you get a link that opens the trade in your own wallet. Your wallet makes the final confirmation, so Greenlight never holds your keys or your money.
 
-## Highlights
-- **Natural-language trading.** Say "Propose buying $25 of NVDAx" and Hermes does the rest.
-- **Live simulation on every proposal.** Real route, quote, price, fee and slippage from the xStocks API before you decide.
-- **Transparent risk score.** A 0-100 score with its contributing factors shown next to Approve and Reject.
-- **A real approval gate.** No transaction exists in local state until you approve; it is then rebuilt fresh and checked for quote drift.
-- **Native approval surfaces.** Desktop pane, status-bar chip and notifications, plus `/greenlight` in the terminal and messaging chats.
-- **Your guardrails, your rules.** Optional daily cap, per-trade limit, ticker allowlist and drift limit. Nothing is capped unless you say so.
-- **Tamper-evident receipts.** Every decision is written to a hash-chained local log you can verify at any time.
-- **Non-custodial by design.** Your wallet signs and sends. Greenlight only hands you an unsigned `solanaPayUrl`.
+## Why you'll like it
+- **Plain, clear trades.** Price, fees, risk and your remaining daily limit, all in one window.
+- **You're always in control.** Hermes cannot send a trade on its own. It has to wait for you.
+- **Live prices.** Every trade is checked against the live xStocks service before you see it.
+- **Protection that stays out of the way.** Daily and per-trade limits are optional and off until you set them.
+- **A history you can trust.** Every decision is saved in a record that shows if anything was changed.
+- **Works where you do.** The Hermes Desktop window, plus simple `/greenlight` commands in the terminal and chat apps.
 
-## Screenshots
-| Approval pane | After approval |
+## See it
+| Review the trade | After you approve |
 |---|---|
-| ![Approval pane with quote, risk score, daily cap and Approve / Reject](assets/screenshots/approval-pane.png) | ![Approved state with Open in wallet, Copy link and Done](assets/screenshots/approved-state.png) |
+| ![The Greenlight window: price, fees, risk check and your daily limit, with Approve and Reject buttons](assets/screenshots/approval-pane.png) | ![After approving: open the link in your wallet to confirm](assets/screenshots/approved-state.png) |
 
-![The /greenlight slash command: status, demo, approve and receipts](assets/screenshots/slash-command.png)
+![Type /greenlight in the terminal or a chat app](assets/screenshots/slash-command.png)
 
-*Pane images are rendered from the plugin's own `desktop/plugin.js` with live xStocks quote data; the terminal image is real `/greenlight` output.*
+*Screens are previews rendered from Greenlight's own interface, with live xStocks prices.*
 
-## Try it in 60 seconds
-No wallet and no funds needed. Install, enable, then run `/greenlight demo` or click **Run demo** in the pane. You get a live NVDAx quote, a risk score and the approval pane. Approving a demo writes a real receipt and releases nothing.
+## Get started
+1. **Install** (one command in a terminal, or use **Install from Git** under Capabilities > Plugins in Hermes Desktop with the same address):
+   ```bash
+   hermes plugins install https://github.com/Datwebguy/greenlight
+   hermes plugins enable greenlight
+   ```
+2. **Switch it on** in Hermes Desktop under Capabilities > Plugins.
+3. **Add your wallet address** in Greenlight's settings (your public address only, never a private key or seed phrase). You'll need Node.js 18 or newer installed on your computer.
+4. **Try a practice trade** with no wallet or funds: type `/greenlight practice`, or press **Try a practice trade** in the Greenlight window.
 
-| Step | What happens |
+## Using Greenlight
+Just talk to Hermes:
+
+> Buy $25 of NVDAx
+
+Hermes sets up the trade and the Greenlight window opens. Review it, then press **Approve** (or **Reject**). After approving, open the link to confirm the trade in your wallet, then press **All done**.
+
+Prefer typing? Use these anywhere you chat with Hermes:
+
+| Type | What it does |
 |---|---|
-| 1. Propose | `propose_trade` simulates the order against the live xStocks API and keeps only the quote |
-| 2. Review | The pane shows quote, price, fee, slippage, risk factors and your daily cap if you set one |
-| 3. Approve | The order is rebuilt fresh, checked for quote drift, and released as an unsigned `solanaPayUrl` |
-| 4. Sign | Your wallet signs and sends |
-| 5. Receipt | A hash-chained receipt is written and `list_receipts` verifies the chain |
+| `/greenlight` | Shows trades waiting for you and today's limit |
+| `/greenlight approve` | Approves the waiting trade (add its id if there is more than one) |
+| `/greenlight reject` | Rejects it |
+| `/greenlight done` | Clears an approved trade once you've confirmed it in your wallet |
+| `/greenlight history` | Shows your recent activity |
+| `/greenlight practice` | Runs a practice trade |
 
-## Install
-```bash
-hermes plugins install https://github.com/Datwebguy/greenlight
-hermes plugins enable greenlight
-```
-Then switch **Greenlight** on in the Desktop app under Capabilities > Plugins, and set your public wallet address as `default_wallet` on the plugin's settings page.
+## Settings
+Open Greenlight's settings page in Hermes Desktop (Capabilities > Plugins).
 
-Requires Hermes Agent 0.21.5 or newer and Node.js 18 or newer (Python 3.11 or newer is already part of Hermes).
+| Setting | What it does | Default |
+|---|---|---|
+| Your wallet address | Used when you don't name a wallet in your request | empty |
+| Daily limit (USD) | Greenlight won't set up trades beyond this total per day | none |
+| Per-trade limit (USD) | Greenlight won't set up a single trade above this amount | none |
+| Only allow these stocks | A list like `NVDAx, AAPLx` | any |
+| Price-change tolerance (%) | If the price gets worse than this before you approve, you get a fresh quote | 1 |
+| Time to decide (minutes) | How long a trade waits for your decision | 10 |
+| Time to confirm after approving (minutes) | How long the wallet link stays available | 30 |
 
-## Use it
-Ask Hermes:
-```
-Propose buying $25 of NVDAx
-```
-Approve in the Desktop pane, or from anywhere with the slash command:
+## Your money and your keys
+- Greenlight **never holds your keys or your funds**, and it never signs or sends anything. Your own wallet does that.
+- Hermes **cannot** send a trade until you approve it.
+- If the price moves against you between review and approval, Greenlight asks for a fresh quote instead of sending a stale one.
+- Your history is saved on your computer, in a record that shows if anything was changed.
 
-| Command | Does |
+## Questions
+**Do I need a wallet to try it?** No. Use a practice trade.
+
+**What if I do nothing?** The trade expires after the time you set and nothing happens.
+
+**Can Hermes trade without me?** No. Every trade waits for your approval.
+
+**Where is my data?** On your computer, in Hermes' plugin data folder. Nothing is sent anywhere except price requests to the xStocks service.
+
+<details>
+<summary><strong>Transparency</strong></summary>
+
+- **Network:** talks to `api.xstocker.com` and `xstocker.com` through the official xStocker SDK. No other services, no telemetry.
+- **Code:** the SDK is bundled unmodified (`vendor/agent-sdk`, with its checksums in `VENDORED.md`). Nothing is installed or downloaded while the plugin runs, and it never updates itself.
+- **Processes:** a short-lived Node.js process per price request, started with a fixed command (`node sdk-bridge.js`). No shell, and never a command chosen by the AI.
+- **Files:** writes only to `<HERMES_HOME>/plugin-data/greenlight/`. Reads no credentials.
+</details>
+
+<details>
+<summary><strong>For developers</strong></summary>
+
+**What Greenlight registers**
+
+| Surface | Details |
 |---|---|
-| `/greenlight` | Show pending trades and your cap |
-| `/greenlight approve [id]` | Approve a proposal (the id can be omitted when exactly one is pending) |
-| `/greenlight reject [id]` | Reject a proposal |
-| `/greenlight done [id]` | Dismiss an approved proposal once you have signed |
-| `/greenlight receipts` | Show recent receipts |
-| `/greenlight demo` | Run the demo flow |
+| Tools | `propose_trade` (simulate and create a pending trade, never returns a transaction), `get_trade_status` (look up a trade or signature; the unsigned link appears only after approval), `list_receipts` (recent receipts with chain verification) |
+| Hooks | `pre_tool_call` blocks other tools from carrying an xStocks order link no approved trade released; `pre_llm_call` keeps the agent aware of pending and approved trades |
+| Command | `/greenlight` |
+| Desktop | approval pane, status-bar chip, notifications |
+| Skill | `greenlight` (teaches the agent the flow and how to talk to users) |
 
-### Agent tools
-| Tool | Purpose |
-|---|---|
-| `propose_trade` | Simulate a trade and create a pending proposal (never releases a transaction) |
-| `get_trade_status` | Look up a proposal or an on-chain signature; the unsigned link appears only after approval |
-| `list_receipts` | Recent receipts, with chain verification |
-
-A bundled `greenlight` skill teaches the agent the flow: propose first, relay the summary, wait for approval.
-
-## How it works
+**Flow**
 ```mermaid
 sequenceDiagram
     participant U as User
@@ -84,71 +115,35 @@ sequenceDiagram
     G->>X: build order (simulation)
     X-->>G: quote + unsigned tx
     Note over G: keeps only the quote, discards the tx
-    G-->>H: proposal + risk, no transaction
-    G-->>U: Desktop pane / chip / notification
-    U->>G: Approve (pane or /greenlight approve)
+    G-->>H: summary + risk, no transaction
+    G-->>U: Desktop window / chip / notification
+    U->>G: Approve (window or /greenlight approve)
     G->>X: rebuild order fresh
     G-->>G: refuse release if the quote drifted
     G-->>H: get_trade_status releases solanaPayUrl
-    H-->>U: link; your wallet signs and sends
+    H-->>U: link; wallet signs and sends
     G-->>G: write hash-chained receipt
 ```
 
-### Simulation
-Every proposal is built against the live xStocks API through the official SDK, so you see a real route, expected output, fee and slippage before deciding. On approval the order is rebuilt, because unsigned transactions are short-lived, and release is refused if the fresh quote is worse than the one you approved by more than your drift limit.
+**Simulation.** Each proposal is built against the live xStocks API through the official SDK, giving a real route, expected output, fee and slippage. On approval the order is rebuilt (unsigned transactions are short-lived) and release is refused if the fresh quote is worse than the approved one by more than `max_quote_drift_pct`.
 
-### Risk score
-A transparent 0-100 score, shown with its factors.
+**Risk check.** A transparent 0-100 score: trade size relative to the daily limit (when set), slippage, fees, SOL price exposure, and wallet-link availability.
 
-| Factor | Looks at |
-|---|---|
-| Size | Trade value relative to your daily cap (when you set one) |
-| Slippage | The quote's slippage in basis points |
-| Fee | Fee as a share of the trade |
-| Pay token | Price exposure on SOL legs |
-| Route | Availability of a Solana Pay link and block-height expiry |
+**Configuration keys** (`plugins.entries.greenlight.settings`): `default_wallet`, `daily_cap_usd`, `max_trade_usd`, `allowed_assets`, `max_quote_drift_pct`, `proposal_ttl_minutes`, `release_window_minutes`. All limits default to off.
 
-## Security model
-- **Non-custodial.** No private key ever enters the plugin. It never signs and never broadcasts; transactions are built by the official xStocker SDK and signed by your own wallet.
-- **Approval is the gate.** Nothing transaction-shaped is stored or returned before you approve. Approval rebuilds the order, checks quote drift and opens a release window (30 minutes by default) after which the link is no longer served.
-- **Defense in depth.** A `pre_llm_call` hook keeps the agent aware of which proposals are pending or approved, and a `pre_tool_call` hook stops any other tool from carrying an xStocks order link that an approved proposal did not release.
-- **Tamper-evident history.** Receipts are chained with SHA-256; any edit breaks the chain and the pane and `list_receipts` show it.
-- **Self-contained.** The official SDK is vendored unmodified, so there are no runtime installs, downloads or self-updates.
-
-## Configuration
-Settings live under `plugins.entries.greenlight.settings` and on the plugin's settings page in the Desktop app.
-
-| Key | Default | Meaning |
-|---|---|---|
-| `default_wallet` | empty | Your public Solana address, used when a request names none |
-| `daily_cap_usd` | 0 (off) | Optional cap on the USD value of approved plus pending proposals per UTC day |
-| `max_trade_usd` | 0 (off) | Optional limit on any single trade |
-| `allowed_assets` | empty (all) | Comma-separated tickers the plugin may propose |
-| `max_quote_drift_pct` | 1.0 | Release is refused if the quote at approval is worse than the approved one by more than this |
-| `proposal_ttl_minutes` | 10 | How long a pending proposal waits for your decision |
-| `release_window_minutes` | 30 | How long an approved link stays available to the agent |
-
-Any amount, any xStock the API lists and any pay token the API accepts is allowed unless you set a guardrail. When you set a cap or per-trade limit, SOL-denominated trades take an optional `max_usd` so they can be priced against it.
-
-## Transparency
-- **Network:** calls `api.xstocker.com` and `xstocker.com` through the official `@xstocker/agent-sdk`. No other third-party services and no telemetry.
-- **Code:** the SDK is vendored unmodified in `vendor/agent-sdk` (integrity recorded in `VENDORED.md`). Nothing is installed or downloaded at runtime.
-- **Processes:** a short-lived `node` process per SDK call with a fixed command line (`node sdk-bridge.js`, request as JSON on stdin). No shell, and never a command chosen by the model.
-- **Files:** writes only to `<HERMES_HOME>/plugin-data/greenlight/` (proposals and receipts). Reads no credentials and holds no keys.
-
-## Development
+**Development**
 ```bash
 pip install pytest fastapi httpx pyyaml
 python -m pytest tests                  # 29 tests, no network needed
 hermes plugins validate . --install-deps
 ```
-Validated with `hermes plugins validate` and `hermes plugins doctor` on Hermes v0.23.1. The tests cover approval gating, limits, receipts and tamper detection, quote-drift refusal, concurrency during approval, the release window, the hooks, the slash command, the pane backend and the vendored SDK.
+Validated with `hermes plugins validate` and `hermes plugins doctor` on Hermes v0.23.1.
+</details>
 
 ## Links
 - [xStocker Agent SDK](https://www.npmjs.com/package/@xstocker/agent-sdk)
 - [xStocks docs](https://docs.xstocks.fi)
 - [Hermes plugin guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/plugins/index.md)
-- [Hermes Desktop Plugin SDK](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/desktop-plugin-sdk.md)
 
 ## License
 MIT. See [LICENSE](LICENSE).

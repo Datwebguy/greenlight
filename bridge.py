@@ -22,21 +22,25 @@ class BridgeError(Exception):
 def call(op, payload=None, timeout=45):
     node = shutil.which("node")
     if not node:
-        raise BridgeError("node_missing", "Node.js >= 18 is required for the xStocks SDK bridge")
+        raise BridgeError("node_missing", "Greenlight needs Node.js 18 or newer installed to fetch live prices.")
     req = dict(payload or {}, op=op)
     try:
         proc = subprocess.run(
             [node, str(BRIDGE)], input=json.dumps(req), capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired:
-        raise BridgeError("timeout", "xStocks SDK call timed out")
+        raise BridgeError("timeout", "The xStocks service took too long to answer. Please try again.")
     try:
         out = json.loads(proc.stdout)
     except ValueError:
-        raise BridgeError("bridge_error", (proc.stderr or "bridge returned no JSON")[-400:])
+        raise BridgeError("bridge_error", "Couldn't get a price from the xStocks service. Please try again.")
     if not out.get("ok"):
         err = out.get("error") or {}
-        raise BridgeError(err.get("code", "bridge_error"), err.get("message", "unknown bridge error"))
+        msg = str(err.get("message", ""))
+        if "429" in msg or "rate" in msg.lower() or "too many" in msg.lower():
+            raise BridgeError("busy", "The price service is busy right now. Please try again in a moment.")
+        raise BridgeError(err.get("code", "bridge_error"),
+                          "The xStocks service couldn't prepare this trade: %s" % (msg or "something went wrong"))
     return out["result"]
 
 

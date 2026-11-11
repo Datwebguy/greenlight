@@ -121,11 +121,11 @@ def test_no_limits_by_default(monkeypatch):
     monkeypatch.delenv("GREENLIGHT_MAX_TRADE_USD")
     big = propose(amount=100000)
     assert big["status"] == "pending_approval" and big["cap"]["limit_usd"] is None
-    assert "no daily cap" in big["summary"]
+    assert "No daily limit" in big["summary"]
     odd = propose(amount=12.34, pay_token="SOL")  # unpriced SOL leg is fine with no limits
     assert odd["status"] == "pending_approval" and odd["notional_usd"] is None
     assert propose(amount=0.01)["status"] == "pending_approval"
-    assert "No daily cap" in service.slash("")
+    assert "No daily limit" in service.slash("")
     assert service.approve(big["proposal_id"])["status"] == "approved"
 
 
@@ -216,7 +216,7 @@ def test_slash_command_flow():
     assert pid in service.slash("")
     assert "solana:" in service.slash("approve")
     assert "Rejected" in service.slash("reject " + propose()["proposal_id"])
-    assert "approved" in service.slash("receipts")
+    assert "approved" in service.slash("history").lower()
     assert "not found" not in service.slash("nonsense").lower()
 
 
@@ -261,10 +261,10 @@ def test_demo_flow_releases_nothing_and_skips_limits(monkeypatch):
     assert json.loads(tools.get_trade_status({"proposal_id": d["proposal_id"]}))["demo"] is True
     approved = service.approve(d["proposal_id"])
     assert approved["status"] == "approved" and "solanaPayUrl" not in approved and "transaction" not in approved
-    assert "never release" in approved["note"]
-    assert "never release" in json.dumps(json.loads(tools.get_trade_status({"proposal_id": d["proposal_id"]})))
+    assert "nothing is ever released" in approved["note"]
+    assert "nothing is ever released" in json.dumps(json.loads(tools.get_trade_status({"proposal_id": d["proposal_id"]})))
     assert service.pending()["cap"]["used_usd"] == 0
-    assert "Demo proposal" in service.slash("demo")
+    assert "Practice trade" in service.slash("demo")
 
 
 def test_vendored_sdk_loads_without_network_or_npm():

@@ -3,7 +3,7 @@ version: 0.1.0
 manifest_version: 2
 api_version: 1
 requires_hermes: ">=0.21.5"
-description: Explicit green-light approval for xStocks trades. Simulate, score, approve in the Desktop pane, then release the unsigned transaction. Non-custodial.
+description: Review and approve every xStocks trade before anything is sent. See the price and risk, approve in one click, and keep a tamper-proof history. Your wallet confirms the trade, so Greenlight never holds your keys.
 author: Datwebguy
 license: MIT
 homepage: https://github.com/Datwebguy/greenlight
@@ -16,10 +16,10 @@ provides_hooks:
   - pre_tool_call
   - pre_llm_call
 config_schema:
-  daily_cap_usd: {type: float, default: 0, label: "Daily cap (USD)", description: "Optional. Maximum total USD value of approved plus pending proposals per UTC day. 0 means no cap."}
-  max_trade_usd: {type: float, default: 0, label: "Per-trade limit (USD)", description: "Optional. Reject any single trade worth more than this. 0 means no limit."}
-  default_wallet: {type: str, default: "", label: "Default wallet", description: "Your Solana wallet address, used when the request does not name one. Public address only, never a key."}
-  allowed_assets: {type: str, default: "", label: "Allowed assets", description: "Comma-separated tickers (e.g. NVDAx,AAPLx). Empty allows every xStock."}
-  release_window_minutes: {type: float, default: 30, label: "Release window (minutes)", description: "After approval, the unsigned link stays available to the agent for this long."}
-  proposal_ttl_minutes: {type: int, default: 10, label: "Proposal lifetime (minutes)", description: "Pending proposals expire after this long."}
-  max_quote_drift_pct: {type: float, default: 1.0, label: "Max quote drift (%)", description: "On approval the order is rebuilt; if the fresh quote is worse than the approved one by more than this, release is refused."}
+  default_wallet: {type: str, default: "", label: "Your wallet address", description: "Your public Solana wallet address. Never enter a private key or seed phrase here."}
+  daily_cap_usd: {type: float, default: 0, label: "Daily limit (USD)", description: "Optional. Greenlight will not set up trades beyond this total per day. Leave at 0 for no limit."}
+  max_trade_usd: {type: float, default: 0, label: "Per-trade limit (USD)", description: "Optional. Greenlight will not set up a single trade above this amount. Leave at 0 for no limit."}
+  allowed_assets: {type: str, default: "", label: "Only allow these stocks", description: "Optional. A list like NVDAx, AAPLx. Leave empty to allow any xStock."}
+  max_quote_drift_pct: {type: float, default: 1.0, label: "Price-change tolerance (%)", description: "If the price gets worse than this between your review and your approval, Greenlight asks for a fresh quote."}
+  proposal_ttl_minutes: {type: int, default: 10, label: "Time to decide (minutes)", description: "How long a trade waits for your decision before it expires."}
+  release_window_minutes: {type: float, default: 30, label: "Time to confirm after approving (minutes)", description: "After you approve, the wallet link stays available for this long."}
