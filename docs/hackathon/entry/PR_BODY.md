@@ -1,7 +1,7 @@
 ## What does this PR do?
 Adds Greenlight to the plugin catalog (Plugin Hackathon entry). Greenlight gives xStocks trades on Solana an explicit approval step inside Hermes. `propose_trade` simulates an order against the live xStocks API through the official `@xstocker/agent-sdk` and returns a quote, a 0-100 risk score with its factors and the remaining daily cap, but never a transaction. The user approves or rejects in a native Desktop approval pane (or with `/greenlight` in the terminal and messaging chats); only then does `get_trade_status` release an unsigned transaction or Solana Pay link, rebuilt fresh and refused if the quote drifted. Non-custodial: it never holds, reads or signs with a private key and never broadcasts.
 
-It is a standalone plugin published from its own repository, as CONTRIBUTING.md directs for third-party product integrations: https://github.com/Datwebguy/greenlight (pinned at `dce8cb8cc813dd912bba4a7413eb7d8d200af5a1`).
+It is a standalone plugin published from its own repository, as CONTRIBUTING.md directs for third-party product integrations: https://github.com/Datwebguy/greenlight (pinned to a full 40-character commit in the entry).
 
 ## Related Issue
 N/A (Plugin Hackathon entry)
@@ -16,7 +16,7 @@ N/A (Plugin Hackathon entry)
 - [ ] New skill (bundled or hub)
 
 ## Changes Made
-- Adds `plugin-catalog/greenlight.yaml`, pinned to a full 40-character SHA, with `capabilities` matching what the plugin registers.
+- Adds `plugin-catalog/greenlight.yaml`, pinned to a full 40-character SHA, with a banner, three screenshots and `capabilities` matching what the plugin registers.
 
 **Hermes surfaces used:** tools (`propose_trade`, `get_trade_status`, `list_receipts`), hooks (`pre_tool_call` approval gate, `pre_llm_call` pending-proposal reminder), a `/greenlight` slash command, the Desktop Plugin SDK (approval pane, status-bar chip, notifications), a bundled skill, `config_schema` settings and a pane backend (`dashboard/plugin_api.py`).
 
@@ -62,4 +62,4 @@ Validation passed.
 $ python3 scripts/validate_plugin_catalog.py plugin-catalog/greenlight.yaml
 OK: 1 file(s) valid
 ```
-Screenshots of the Desktop approval pane will be added in a comment.
+The entry includes a banner and three screenshots, pinned to the same commit. The two pane images are rendered from the plugin's own `desktop/plugin.js` with live xStocks quote data; the terminal image is real `/greenlight` output. Screenshots from a Hermes Desktop install will be added in a comment.
