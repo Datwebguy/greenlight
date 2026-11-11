@@ -93,7 +93,7 @@ def _validate(args):
 def _public(p, st=None):
     """Proposal view that never contains transaction material (see _release_view)."""
     keys = ("id", "status", "asset", "side", "amount", "pay_token", "wallet", "quote", "notional_usd",
-            "risk", "cap", "unpriced", "created_at", "expires_at", "approved_at", "rejected_at", "signature", "settlement")
+            "risk", "cap", "unpriced", "demo", "created_at", "expires_at", "approved_at", "rejected_at", "signature", "settlement")
     view = {k: p[k] for k in keys if k in p}
     view["implied_price_usd"] = _implied_price(p["quote"])
     view["seconds_left"] = max(0, int(p["expires_at_ts"] - time.time())) if p["status"] == "pending" else 0
@@ -102,7 +102,10 @@ def _public(p, st=None):
 
 # ------------------------------------------------------------------ propose
 
-def propose_trade(args):
+DEMO_WALLET = "11111111111111111111111111111111"  # the System Program address: public, holds nothing
+
+
+def propose_trade(args, demo=False):
     asset, amount, side, pay_token, wallet, max_usd = _validate(args)
     symbol = _resolve_asset(asset)
     # Accepted pay tokens come from the live API, not a hardcoded list.
@@ -120,8 +123,10 @@ def propose_trade(args):
     has_link = bool(order.get("solanaPayUrl"))
 
     notional, why = risk.notional_usd(side, pay_token, amount, details, max_usd)
-    per_trade = float(state.setting("max_trade_usd"))
-    limits_on = per_trade > 0 or float(state.setting("daily_cap_usd")) > 0
+    if demo:  # demo proposals never count against, or get checked by, the user's limits
+        notional, why = 0.0, None
+    per_trade = 0.0 if demo else float(state.setting("max_trade_usd"))
+    limits_on = per_trade > 0 or (not demo and float(state.setting("daily_cap_usd")) > 0)
     unpriced = notional is None
     if unpriced:
         if limits_on:  # a limit is configured, so the trade must be priced to be checked against it
@@ -135,7 +140,7 @@ def propose_trade(args):
     with state.transaction() as st:
         state.expire_stale(st)
         cap = state.cap_snapshot(st)
-        if cap["remaining_usd"] is not None and notional > cap["remaining_usd"] + 1e-9:
+        if not demo and cap["remaining_usd"] is not None and notional > cap["remaining_usd"] + 1e-9:
             return {"status": "rejected", "reason": "daily_cap_exceeded", "notional_usd": round(notional, 2),
                     "cap": cap, "message": "This trade would exceed the local daily cap. No proposal was created."}
         scored = risk.score(notional, cap["limit_usd"], details, pay_token, has_link)
@@ -148,7 +153,7 @@ def propose_trade(args):
             "pay_token": pay_token, "wallet": wallet, "quote": details, "notional_usd": round(notional, 2),
             "risk": scored, "created_at": state.iso(t), "created_at_ts": t,
             "expires_at": state.iso(t + ttl), "expires_at_ts": t + ttl,
-            "unpriced": unpriced,
+            "unpriced": unpriced, "demo": demo,
             "cap": {"limit_usd": cap["limit_usd"], "used_usd": cap["used_usd"], "remaining_after_usd": remaining_after},
         }
         proposal = _public(st["proposals"][pid])
@@ -195,6 +200,13 @@ def approve(proposal_id):
             raise GreenlightError("not_found", "No such proposal")
         if p["status"] != "pending":
             raise GreenlightError("not_pending", "Proposal is %s" % p["status"])
+        if p.get("demo"):  # demo: walk the whole flow but release nothing, ever
+            t = state.now()
+            p["status"] = "approved"
+            p["approved_at"], p["approved_at_ts"] = state.iso(t), t
+            state.append_receipt(st, p["id"], "approved", {"demo": True, "asset": p["asset"], "side": p["side"],
+                                                           "notional_usd": None, "quote": p["quote"]})
+            return _release_view(p)
         # Rebuild right before release: unsigned transactions expire in ~1 minute.
         order = bridge.build_order(p["wallet"], p["asset"], p["amount"], p["side"], p["pay_token"])
         drift = _quote_drift_pct(p["quote"], order.get("details") or {})
@@ -243,7 +255,9 @@ def _quote_drift_pct(approved, fresh):
 def _release_view(p):
     """The ONLY place transaction material leaves local state, and only for approved proposals."""
     view = _public(p)
-    if p["status"] == "approved":
+    if p["status"] == "approved" and p.get("demo"):
+        view["note"] = "Demo proposal: the flow was real, but demo proposals never release a transaction."
+    elif p["status"] == "approved":
         rel = p.get("release") or {}
         view["solanaPayUrl"] = rel.get("solanaPayUrl")
         view["transaction"] = rel.get("transaction")
@@ -266,7 +280,7 @@ def get_trade_status(args):
             p = st["proposals"].get(pid)
             if not p:
                 raise GreenlightError("not_found", "No such proposal")
-            if p["status"] == "approved" and not p.get("signature"):
+            if p["status"] == "approved" and not p.get("signature") and not p.get("demo"):
                 rel = p.get("release") or {}
                 if time.time() - rel.get("built_at_ts", 0) > TX_MAX_AGE:
                     order = bridge.build_order(p["wallet"], p["asset"], p["amount"], p["side"], p["pay_token"])
@@ -351,6 +365,18 @@ def llm_context():
     return "Greenlight:\n" + "\n".join(lines) if lines else None
 
 
+def demo_proposal():
+    """A real simulation against the live API for a placeholder wallet. No wallet, funds or limits involved,
+    and approving it releases nothing."""
+    wallet = str(state.setting("default_wallet") or "").strip() or DEMO_WALLET
+    asset = "NVDAx"
+    try:
+        _resolve_asset(asset)
+    except GreenlightError:
+        asset = _assets_cache["data"]["assets"][0]["symbol"]
+    return propose_trade({"asset": asset, "amount": 25, "side": "buy", "wallet": wallet, "pay_token": "USDC"}, demo=True)
+
+
 # ---------------------------------------------------------- slash command
 
 def slash(raw):
@@ -359,6 +385,10 @@ def slash(raw):
     verb = parts[0].lower() if parts else "status"
     pid = parts[1] if len(parts) > 1 else None
     try:
+        if verb == "demo":
+            d = demo_proposal()
+            return ("Demo proposal %s created from a live quote. Approve or reject it in the Greenlight pane, or "
+                    "type /greenlight approve %s. Demo proposals never release a transaction.\n%s" % (d["proposal_id"], d["proposal_id"], d["summary"]))
         if verb in ("approve", "reject"):
             if not pid:
                 items = pending()["pending"]
@@ -369,6 +399,8 @@ def slash(raw):
                 reject(pid)
                 return "Rejected %s. Nothing was released." % pid
             r = approve(pid)
+            if r.get("demo"):
+                return "Approved demo %s. The flow was real, but demo proposals never release a transaction." % pid
             return ("Approved %s. Open this link in your wallet to sign (Greenlight never signs):\n%s"
                     % (pid, r.get("solanaPayUrl") or "(no link; ask the agent for the unsigned transaction)"))
         if verb == "receipts":

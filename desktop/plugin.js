@@ -35,7 +35,7 @@ function Proposal({ p, busy, onApprove, onReject }) {
   const q = p.quote || {}
   return el('div', { className: 'flex flex-col gap-2 rounded-md border border-(--ui-stroke-secondary) p-3' },
     el('div', { className: 'flex items-center justify-between' },
-      jsx('span', { className: 'text-sm font-medium', children: `${p.side.toUpperCase()} ${p.asset}` }),
+      jsx('span', { className: 'text-sm font-medium', children: `${p.side.toUpperCase()} ${p.asset}${p.demo ? '  (demo)' : ''}` }),
       jsx('span', { className: `text-[0.6875rem] ${muted}`, children: `${p.seconds_left}s left` })),
     jsx(Row, { label: 'You pay', value: q.amountIn }),
     jsx(Row, { label: 'You receive (est.)', value: q.expectedOut }),
@@ -53,6 +53,11 @@ function Proposal({ p, busy, onApprove, onReject }) {
 }
 
 function Released({ p, ctx }) {
+  if (p.demo) {
+    return el('div', { className: 'flex flex-col gap-1 rounded-md border border-(--ui-stroke-secondary) p-3' },
+      jsx('span', { className: 'text-sm font-medium', children: `Demo approved: ${p.side} ${p.asset}` }),
+      jsx('div', { className: `text-[0.6875rem] ${muted}`, children: 'The whole flow was real, but demo proposals never release a transaction.' }))
+  }
   return el('div', { className: 'flex flex-col gap-2 rounded-md border border-(--ui-accent) p-3' },
     jsx('span', { className: 'text-sm font-medium', children: `Approved: ${p.side} ${p.asset}` }),
     p.solanaPayUrl
@@ -109,6 +114,13 @@ function Pane({ ctx }) {
     } finally { setBusy(false); refresh() }
   }
 
+  const runDemo = async () => {
+    setBusy(true); setError('')
+    try { await ctx.rest('/demo', { method: 'POST', body: {} }) } catch (e) {
+      setError((e && e.detail && e.detail.message) || String((e && e.message) || e))
+    } finally { setBusy(false); refresh() }
+  }
+
   const cap = data.cap
   return el('div', { className: 'flex h-full flex-col gap-3 overflow-auto p-3 text-sm' },
     el('div', { className: 'flex items-center justify-between' },
@@ -116,7 +128,9 @@ function Pane({ ctx }) {
       cap && jsx('span', { className: `text-xs ${muted}`, children: `Daily cap: ${capText(cap)}` })),
     error && jsx('div', { className: 'text-xs text-(--ui-accent)', children: error }),
     data.pending.length === 0 && data.approved.length === 0 &&
-      jsx('div', { className: muted, children: 'No trades waiting. Ask Hermes: "Propose buying $25 of NVDAx".' }),
+      el('div', { className: 'flex flex-col gap-2' },
+        jsx('div', { className: muted, children: 'No trades waiting. Ask Hermes: "Propose buying $25 of NVDAx".' }),
+        jsx(Button, { variant: 'outline', disabled: busy, onClick: runDemo, children: 'Run demo (no wallet needed)' })),
     ...data.pending.map(p => jsx(Proposal, { key: p.id, p, busy, onApprove: act('approve'), onReject: act('reject') })),
     ...data.approved.map(p => jsx(Released, { key: p.id, p, ctx })),
     jsx(Receipts, { ctx }))

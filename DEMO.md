@@ -5,7 +5,8 @@ Rules from the hackathon: show the plugin working, post the video on X, tag @Nou
 ## Before recording
 - `hermes plugins install https://github.com/Datwebguy/greenlight` and `hermes plugins enable greenlight`
 - Enable Greenlight in Desktop > Capabilities > Plugins and set `default_wallet` to a wallet you control
-- Run one proposal beforehand so the Node SDK is already installed (the first run installs it)
+- Make sure Node.js 18+ is installed (the SDK is vendored, nothing downloads)
+- If you would rather not use a real wallet on screen, use the pane's **Run demo** button: same flow, nothing released
 - Use a small amount ($25) and a wallet you are happy to show
 
 ## Shot list

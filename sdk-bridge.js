@@ -3,20 +3,20 @@
 // JSON response on stdout. It builds UNSIGNED transactions and reads public data
 // only; no private key ever passes through here.
 //
-// Request:  {"op": "assets" | "buildOrder" | "orderStatus", "sdkDir": "<dir>", ...}
+// Request:  {"op": "assets" | "buildOrder" | "orderStatus", ...}
 // Response: {"ok": true, "result": ...} | {"ok": false, "error": {"code", "message"}}
 "use strict";
 
 const path = require("node:path");
-const { createRequire } = require("node:module");
 
-function loadSdk(sdkDir) {
-  const base = path.join(sdkDir || __dirname, "package.json");
-  return createRequire(base)("@xstocker/agent-sdk");
+// The official SDK is vendored unmodified under vendor/agent-sdk (see VENDORED.md):
+// nothing is installed or downloaded at runtime.
+function loadSdk() {
+  return require(path.join(__dirname, "vendor", "agent-sdk"));
 }
 
 async function run(req) {
-  const { xstocker } = loadSdk(req.sdkDir);
+  const { xstocker } = loadSdk();
   switch (req.op) {
     case "assets":
       return xstocker.getAssets();

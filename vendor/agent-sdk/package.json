@@ -1,0 +1,40 @@
+{
+  "name": "@xstocker/agent-sdk",
+  "version": "1.4.0",
+  "description": "SDK for AI agents to trade tokenized U.S. stocks (xStocks) on Solana via the xStocker Agent API.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "solana",
+    "ai-agent",
+    "xstocks",
+    "jupiter",
+    "tokenized-stocks",
+    "mcp"
+  ],
+  "author": "xStocker",
+  "license": "MIT",
+  "homepage": "https://xstocker.com/agents",
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

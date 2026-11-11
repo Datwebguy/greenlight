@@ -252,3 +252,26 @@ def test_register_matches_manifest():
     assert sorted(ctx.tools) == sorted(manifest["provides_tools"])
     assert sorted(ctx.hooks) == sorted(manifest["provides_hooks"])
     assert ctx.cmds == ["greenlight"] and ctx.skills == ["greenlight"]
+
+
+def test_demo_flow_releases_nothing_and_skips_limits(monkeypatch):
+    monkeypatch.setenv("GREENLIGHT_MAX_TRADE_USD", "1")  # would reject $25 if limits applied
+    d = service.demo_proposal()
+    assert d["status"] == "pending_approval" and d["cap"]["used_usd"] == 0
+    assert json.loads(tools.get_trade_status({"proposal_id": d["proposal_id"]}))["demo"] is True
+    approved = service.approve(d["proposal_id"])
+    assert approved["status"] == "approved" and "solanaPayUrl" not in approved and "transaction" not in approved
+    assert "never release" in approved["note"]
+    assert "never release" in json.dumps(json.loads(tools.get_trade_status({"proposal_id": d["proposal_id"]})))
+    assert service.pending()["cap"]["used_usd"] == 0
+    assert "Demo proposal" in service.slash("demo")
+
+
+def test_vendored_sdk_loads_without_network_or_npm():
+    import subprocess
+    from pathlib import Path
+
+    root = Path(gl.__file__).parent
+    out = subprocess.run(["node", str(root / "sdk-bridge.js")], input='{"op":"nope"}', capture_output=True, text=True)
+    assert json.loads(out.stdout)["error"]["code"] == "bad_op"  # reached the op switch, so the SDK loaded
+    assert not (root / "node_modules").exists()

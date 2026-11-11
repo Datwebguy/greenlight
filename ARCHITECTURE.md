@@ -9,7 +9,7 @@
    - `bridge.py` calls the Node bridge for the agent SDK
 
 2. **Node bridge** (`sdk-bridge.js`)
-   - Thin wrapper around `@xstocker/agent-sdk` (pinned 1.4.0, installed on first use with scripts disabled)
+   - Thin wrapper around the official `@xstocker/agent-sdk` 1.4.0, **vendored unmodified** in `vendor/agent-sdk` (nothing installed or downloaded at runtime)
    - Receives one JSON request on stdin, returns one JSON response: assets, an unsigned order, or an order status
 
 3. **Pane backend** (`dashboard/plugin_api.py`)
@@ -26,6 +26,9 @@
 
 ## Data flow
 User intent -> `propose_trade` (validates, checks per-trade limit, allowlist and daily cap) -> agent-sdk builds the order as the **simulation**; only the quote is kept, the transaction is discarded -> proposal stored with risk score -> Desktop pane (or `/greenlight`) shows it -> user approves -> order is **rebuilt fresh** (transactions expire in about a minute) and checked for quote drift -> unsigned transaction / solanaPayUrl released through `get_trade_status` -> receipt written. Reject writes a receipt and releases nothing.
+
+## Demo mode
+`/greenlight demo` or the pane's **Run demo** button creates a proposal from a live quote for a placeholder wallet. It skips the user's limits, and approving it writes a receipt but releases nothing.
 
 ## Approval surfaces
 - Desktop pane and status-bar chip (primary)

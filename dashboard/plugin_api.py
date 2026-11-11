@@ -61,6 +61,13 @@ async def reject(proposal_id: str):
     return out
 
 
+@router.post("/demo")
+async def demo():
+    out = _call(lambda s: s.demo_proposal())
+    _changed(out.get("proposal_id"))
+    return out
+
+
 @router.get("/receipts")
 async def receipts(limit: int = 10):
     return _call(lambda s, n: s.list_receipts(n), limit)

@@ -36,10 +36,18 @@ Usefulness, reliability, polish, creativity. No official weights found.
 
 **Disclosure (rule 13):**
 - Network calls to `api.xstocker.com` and `xstocker.com` through the official `@xstocker/agent-sdk`. No other third-party services. No telemetry.
-- On first use runs `npm install @xstocker/agent-sdk@1.4.0 --ignore-scripts` into the plugin data directory (needs Node.js 18+ and npm).
-- Spawns a short-lived `node` subprocess per SDK call.
+- The official `@xstocker/agent-sdk` 1.4.0 is vendored unmodified (`vendor/agent-sdk`, integrity recorded in `VENDORED.md`). Nothing is installed or downloaded at runtime; no self-updating code.
+- Spawns a short-lived `node` subprocess per SDK call with a fixed command line and JSON on stdin. It never runs a model-chosen command and never uses a shell.
 - Writes only to `<HERMES_HOME>/plugin-data/greenlight/` (proposals, receipts). Reads no credentials.
 
-**Testing evidence:** 16 automated tests (`python -m pytest tests`) covering approval gating, caps, receipts, drift refusal, the hook and the slash command; plus a live run against the xStocks API (propose then approve a $25 NVDAx buy).
+**Testing evidence:** 21 automated tests (`python -m pytest tests`) covering approval gating, caps, receipts, drift refusal, the hook and the slash command; plus a live run against the xStocks API (propose then approve a $25 NVDAx buy).
 
 Add screenshots of the pane to the PR.
+
+## PR format (learned from a merged hackathon PR, NousResearch/hermes-agent#151376)
+- Title: `feat(plugin-catalog): add greenlight plugin (Plugin Hackathon entry)` (Conventional Commits).
+- Touch exactly one file: `plugin-catalog/greenlight.yaml`.
+- Checklist in the description: contributing guide read, searched for duplicate PRs, change limited to one catalog file, `hermes plugins validate` run, tested on your OS, docs provided.
+- Reviewers blocked that PR until a CLI path that ran a model-chosen shell command was removed. Greenlight has no such path; say so in the description.
+- If the catalog yaml sets a banner `image` or `screenshots`, pin them to the same commit (GitHub-hosted, HTTPS).
+- A maintainer may handle the disclosure line and version floor as a merge chore; do not wait on that to submit the form.

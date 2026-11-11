@@ -14,7 +14,7 @@ version: "0.1.0"
 readme: true
 title: "Greenlight"
 known_issues:
-  - "Needs Node.js 18+ and npm on first use to install @xstocker/agent-sdk."
+  - "Needs Node.js 18+ on the machine (runs the vendored xStocks SDK)."
 capabilities:
   provides_tools: [propose_trade, get_trade_status, list_receipts]
   provides_hooks: [pre_tool_call, pre_llm_call]
