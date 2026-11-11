@@ -41,5 +41,8 @@ User intent -> `propose_trade` (validates, checks per-trade limit, allowlist and
 - Approval is refused if the fresh quote drifted beyond `max_quote_drift_pct`.
 - A `pre_tool_call` gate blocks other tools from carrying an xStocks order link that no approved proposal released.
 - A `pre_llm_call` reminder tells the model which proposals are pending or approved, so it never treats an open proposal as approved.
+- Approval does its network call outside the state lock, so the pane and tools stay responsive, and re-checks the proposal is still pending before releasing anything.
+- Approved links are served only inside a configurable release window and until the user marks them done or settles them.
+- A state file that cannot be parsed is set aside, never overwritten; finished proposals older than 90 days are pruned while receipts are kept.
 - Receipts are hash-chained; tampering is detected by `list_receipts` and shown in the pane.
 - All state is local.

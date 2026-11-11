@@ -15,7 +15,7 @@ import uuid
 from . import bridge, risk, state
 
 _B58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
-_TICKER = re.compile(r"^[A-Za-z0-9]{1,12}$")
+_TICKER = re.compile(r"^[A-Za-z0-9]{1,24}$")
 PAY_URL = re.compile(r"solana:https%3A%2F%2Fxstocker\.com[^\s\"'\\]*")
 TX_MAX_AGE = 50  # seconds; unsigned transactions expire after roughly a minute
 
@@ -45,6 +45,21 @@ def _notify(event, payload):
         pass
 
 
+def _bare(symbol):
+    """'NVDAx' -> 'nvda' (strip ONE trailing x), so 'NVDA', 'nvdax' and 'NVDAx' all match."""
+    s = symbol.lower()
+    return s[:-1] if s.endswith("x") else s
+
+
+def _num(value):
+    """Parse a number the way people write it: 25, '25', '$1,250.50'."""
+    if isinstance(value, bool):
+        raise ValueError("not a number")
+    if isinstance(value, str):
+        value = value.strip().lstrip("$").replace(",", "").replace("_", "")
+    return float(value)
+
+
 def _resolve_asset(asset):
     if time.time() - _assets_cache["ts"] > 600 or not _assets_cache["data"]:
         _assets_cache["data"] = bridge.get_assets()
@@ -52,23 +67,23 @@ def _resolve_asset(asset):
     want = asset.strip().lower()
     for a in _assets_cache["data"].get("assets", []):
         sym = a["symbol"].lower()
-        if want in (sym, sym.rstrip("x"), a["mint"].lower()):
+        if want in (sym, _bare(sym), a["mint"].lower()):
             return a["symbol"]
     known = ", ".join(a["symbol"] for a in _assets_cache["data"].get("assets", [])[:25])
     raise GreenlightError("unknown_asset", "Unknown xStock '%s'. Known: %s" % (asset, known))
 
 
 def _validate(args):
-    asset = str(args.get("asset") or "").strip()
+    asset = str(args.get("asset") or "").strip().lstrip("$")
     if not (_TICKER.match(asset) or _B58.match(asset)):
         raise GreenlightError("invalid_asset", "asset must be an xStocks ticker (e.g. NVDAx) or mint address")
     try:
-        amount = float(args.get("amount"))
+        amount = _num(args.get("amount"))
     except (TypeError, ValueError):
-        raise GreenlightError("invalid_amount", "amount must be a number")
+        raise GreenlightError("invalid_amount", "amount must be a number, e.g. 25 or 12.5")
     if not (amount > 0) or amount != amount or amount == float("inf"):
         raise GreenlightError("invalid_amount", "amount must be a positive, finite number")
-    side = args.get("side")
+    side = str(args.get("side") or "").strip().lower()
     if side not in ("buy", "sell"):
         raise GreenlightError("invalid_side", "side must be 'buy' or 'sell'")
     pay_token = str(args.get("pay_token") or "USDC").strip().upper()
@@ -82,7 +97,7 @@ def _validate(args):
     max_usd = args.get("max_usd")
     if max_usd is not None:
         try:
-            max_usd = float(max_usd)
+            max_usd = _num(max_usd)
         except (TypeError, ValueError):
             raise GreenlightError("invalid_max_usd", "max_usd must be a number")
         if not (max_usd > 0):
@@ -113,7 +128,7 @@ def propose_trade(args, demo=False):
     if accepted and pay_token not in accepted:
         raise GreenlightError("invalid_pay_token", "pay_token must be one of: %s" % ", ".join(accepted))
     allowed = [a.strip().lower() for a in str(state.setting("allowed_assets") or "").split(",") if a.strip()]
-    if allowed and symbol.lower().rstrip("x") not in [a.rstrip("x") for a in allowed]:
+    if allowed and _bare(symbol) not in [_bare(a) for a in allowed]:
         raise GreenlightError("asset_not_allowed", "%s is not in the allowed_assets list" % symbol)
 
     # Mandatory simulation: build the order against the live API to get a real
@@ -192,55 +207,93 @@ def _implied_price(q):
 
 # ------------------------------------------------------- approve / reject
 
+def _load_pending(st, proposal_id):
+    """(proposal, error) for a proposal that must still be pending. Stale proposals are expired first."""
+    state.expire_stale(st)
+    p = st["proposals"].get(proposal_id)
+    if not p:
+        return None, ("not_found", "No such proposal")
+    if p["status"] != "pending":
+        return p, ("not_pending", "Proposal is %s" % p["status"])
+    return p, None
+
+
+def _release_active(p):
+    """Approved, not yet settled or dismissed, and still inside the release window."""
+    if p["status"] != "approved" or p.get("signature") or p.get("done"):
+        return False
+    window = float(state.setting("release_window_minutes")) * 60
+    return window <= 0 or state.now() - p.get("approved_at_ts", 0) < window
+
+
 def approve(proposal_id):
+    err = snap = None
     with state.transaction() as st:
-        state.expire_stale(st)
-        p = st["proposals"].get(proposal_id)
-        if not p:
-            raise GreenlightError("not_found", "No such proposal")
-        if p["status"] != "pending":
-            raise GreenlightError("not_pending", "Proposal is %s" % p["status"])
-        if p.get("demo"):  # demo: walk the whole flow but release nothing, ever
+        p, err = _load_pending(st, proposal_id)
+        if not err and p.get("demo"):  # demo: walk the whole flow but release nothing, ever
             t = state.now()
             p["status"] = "approved"
             p["approved_at"], p["approved_at_ts"] = state.iso(t), t
             state.append_receipt(st, p["id"], "approved", {"demo": True, "asset": p["asset"], "side": p["side"],
                                                            "notional_usd": None, "quote": p["quote"]})
             return _release_view(p)
-        # Rebuild right before release: unsigned transactions expire in ~1 minute.
-        order = bridge.build_order(p["wallet"], p["asset"], p["amount"], p["side"], p["pay_token"])
-        drift = _quote_drift_pct(p["quote"], order.get("details") or {})
-        limit = float(state.setting("max_quote_drift_pct"))
-        if drift > limit:
-            p["drift_pct"] = round(drift, 3)
-            raise GreenlightError("quote_drifted", "Quote moved %.2f%% against you (limit %.2f%%). Reject and "
-                                  "propose again." % (drift, limit), fresh_quote=order.get("details"))
-        t = state.now()
-        p["status"] = "approved"
-        p["approved_at"], p["approved_at_ts"] = state.iso(t), t
-        p["release"] = {"transaction": order.get("transaction"), "solanaPayUrl": order.get("solanaPayUrl"),
-                        "built_at_ts": t}
-        state.append_receipt(st, p["id"], "approved", {
-            "asset": p["asset"], "side": p["side"], "amount": p["amount"], "notional_usd": p["notional_usd"],
-            "quote": p["quote"], "risk": p["risk"]["score"],
-            "release_sha256": {"transaction": _digest(order.get("transaction")),
-                               "solanaPayUrl": _digest(order.get("solanaPayUrl"))},
-        })
-        return _release_view(p)
+        if not err:
+            snap = dict(p)
+    if err:
+        raise GreenlightError(*err)
+
+    # Rebuild right before release (unsigned transactions expire in ~1 minute). The network call runs
+    # outside the state lock so the pane and other tools never wait on it.
+    order = bridge.build_order(snap["wallet"], snap["asset"], snap["amount"], snap["side"], snap["pay_token"])
+    drift = _quote_drift_pct(snap["quote"], order.get("details") or {})
+    limit = float(state.setting("max_quote_drift_pct"))
+    if drift > limit:
+        raise GreenlightError("quote_drifted", "The quote moved %.2f%% against you (limit %.2f%%). Reject this "
+                              "proposal and propose again." % (drift, limit), fresh_quote=order.get("details"))
+
+    with state.transaction() as st:
+        p, err = _load_pending(st, proposal_id)  # someone may have rejected or it may have expired meanwhile
+        if not err:
+            t = state.now()
+            p["status"] = "approved"
+            p["approved_at"], p["approved_at_ts"] = state.iso(t), t
+            p["release"] = {"transaction": order.get("transaction"), "solanaPayUrl": order.get("solanaPayUrl"),
+                            "built_at_ts": t}
+            state.append_receipt(st, p["id"], "approved", {
+                "asset": p["asset"], "side": p["side"], "amount": p["amount"], "notional_usd": p["notional_usd"],
+                "quote": p["quote"], "risk": p["risk"]["score"],
+                "release_sha256": {"transaction": _digest(order.get("transaction")),
+                                   "solanaPayUrl": _digest(order.get("solanaPayUrl"))},
+            })
+            result = _release_view(p)
+    if err:
+        raise GreenlightError(*err)
+    _notify("proposal.updated", {"id": proposal_id})
+    return result
 
 
 def reject(proposal_id):
+    err = result = None
     with state.transaction() as st:
-        state.expire_stale(st)
+        p, err = _load_pending(st, proposal_id)
+        if not err:
+            p["status"] = "rejected"
+            p["rejected_at"] = state.iso(state.now())
+            state.append_receipt(st, p["id"], "rejected", {"asset": p["asset"], "side": p["side"],
+                                                           "notional_usd": p["notional_usd"]})
+            result = _public(p)
+    if err:
+        raise GreenlightError(*err)
+    return result
+
+
+def dismiss(proposal_id):
+    """The user is done with an approved proposal (for example they signed): stop surfacing it."""
+    with state.transaction() as st:
         p = st["proposals"].get(proposal_id)
-        if not p:
-            raise GreenlightError("not_found", "No such proposal")
-        if p["status"] != "pending":
-            raise GreenlightError("not_pending", "Proposal is %s" % p["status"])
-        p["status"] = "rejected"
-        p["rejected_at"] = state.iso(state.now())
-        state.append_receipt(st, p["id"], "rejected", {"asset": p["asset"], "side": p["side"],
-                                                       "notional_usd": p["notional_usd"]})
+        if not p or p["status"] != "approved":
+            raise GreenlightError("not_found", "No approved proposal with that id")
+        p["done"] = True
         return _public(p)
 
 
@@ -253,10 +306,13 @@ def _quote_drift_pct(approved, fresh):
 
 
 def _release_view(p):
-    """The ONLY place transaction material leaves local state, and only for approved proposals."""
+    """The ONLY place transaction material leaves local state, and only for an approved proposal whose
+    release window is still open."""
     view = _public(p)
     if p["status"] == "approved" and p.get("demo"):
         view["note"] = "Demo proposal: the flow was real, but demo proposals never release a transaction."
+    elif p["status"] == "approved" and not _release_active(p) and not p.get("signature"):
+        view["note"] = "The release window has ended. Propose the trade again to get a fresh link."
     elif p["status"] == "approved":
         rel = p.get("release") or {}
         view["solanaPayUrl"] = rel.get("solanaPayUrl")
@@ -269,25 +325,30 @@ def _release_view(p):
 # ------------------------------------------------------------ status / lists
 
 def get_trade_status(args):
-    pid = (args.get("proposal_id") or "").strip()
-    sig = (args.get("signature") or "").strip()
+    pid = str(args.get("proposal_id") or "").strip()
+    sig = str(args.get("signature") or "").strip()
     if not pid and not sig:
         raise GreenlightError("missing_argument", "Provide proposal_id or signature")
     out = {}
     if pid:
+        stale = None
         with state.transaction() as st:
             state.expire_stale(st)
             p = st["proposals"].get(pid)
             if not p:
                 raise GreenlightError("not_found", "No such proposal")
-            if p["status"] == "approved" and not p.get("signature") and not p.get("demo"):
-                rel = p.get("release") or {}
-                if time.time() - rel.get("built_at_ts", 0) > TX_MAX_AGE:
-                    order = bridge.build_order(p["wallet"], p["asset"], p["amount"], p["side"], p["pay_token"])
-                    rel.update(transaction=order.get("transaction"), solanaPayUrl=order.get("solanaPayUrl"),
-                               built_at_ts=time.time())
-                    p["release"] = rel
+            if _release_active(p) and not p.get("demo"):
+                if time.time() - (p.get("release") or {}).get("built_at_ts", 0) > TX_MAX_AGE:
+                    stale = dict(p)
             out = _release_view(p)
+        if stale:  # refresh an aged transaction outside the lock
+            order = bridge.build_order(stale["wallet"], stale["asset"], stale["amount"], stale["side"], stale["pay_token"])
+            with state.transaction() as st:
+                p = st["proposals"].get(pid)
+                if p and _release_active(p):
+                    p["release"] = {"transaction": order.get("transaction"), "solanaPayUrl": order.get("solanaPayUrl"),
+                                    "built_at_ts": time.time()}
+                    out = _release_view(p)
     if sig:
         chain = bridge.order_status(sig)
         out["signature_status"] = chain
@@ -307,14 +368,17 @@ def pending():
         state.expire_stale(st)
         items = [_public(p) for p in st["proposals"].values() if p["status"] == "pending"]
         recent = [_release_view(p) for p in sorted(st["proposals"].values(), key=lambda x: -x["created_at_ts"])
-                  if p["status"] in ("approved",) and not p.get("signature")][:3]
+                  if _release_active(p)][:3]
         cap = state.cap_snapshot(st)
     items.sort(key=lambda x: x["created_at"], reverse=True)
     return {"pending": items, "approved": recent, "cap": cap}
 
 
 def list_receipts(limit=10, proposal_id=None):
-    limit = max(1, min(int(limit or 10), 100))
+    try:
+        limit = max(1, min(int(limit or 10), 100))
+    except (TypeError, ValueError):
+        limit = 10
     with state.transaction(write=False) as st:
         chain_ok = state.verify_chain(st["receipts"])
         items = [r for r in st["receipts"] if not proposal_id or r["proposal_id"] == proposal_id]
@@ -338,8 +402,8 @@ def gate_check(tool_name, args):
     if not urls:
         return None
     with state.transaction(write=False) as st:
-        ok = {_digest(p.get("release", {}).get("solanaPayUrl")) for p in st["proposals"].values()
-              if p["status"] == "approved" and not p.get("signature")}
+        ok = {_digest((p.get("release") or {}).get("solanaPayUrl")) for p in st["proposals"].values()
+              if _release_active(p) and not p.get("demo")}
     for u in urls:
         if _digest(u) not in ok:
             return ("Blocked by Greenlight: this xStocks order link was not released by an approved Greenlight "
@@ -352,13 +416,14 @@ def gate_check(tool_name, args):
 def llm_context():
     """pre_llm_call reminder so the model never treats an open proposal as approved."""
     with state.transaction(write=False) as st:
-        now = state.now()
-        pend = [p for p in st["proposals"].values() if p["status"] == "pending" and p["expires_at_ts"] > now]
-        appr = [p for p in st["proposals"].values() if p["status"] == "approved" and not p.get("signature")]
+        t = state.now()
+        pend = [p for p in st["proposals"].values() if p["status"] == "pending" and p["expires_at_ts"] > t]
+        appr = [p for p in st["proposals"].values() if _release_active(p) and not p.get("demo")]
     lines = []
     for p in pend:
-        lines.append("Proposal %s (%s %s $%.2f) is PENDING the user's approval. It is not approved; do not treat any "
-                     "transaction as available." % (p["id"], p["side"], p["asset"], p["notional_usd"]))
+        value = "unpriced" if p.get("unpriced") else "$%.2f" % p["notional_usd"]
+        lines.append("Proposal %s (%s %s, %s) is PENDING the user's approval. It is not approved; do not treat any "
+                     "transaction as available." % (p["id"], p["side"], p["asset"], value))
     for p in appr:
         lines.append("Proposal %s was approved by the user; call get_trade_status to fetch the unsigned "
                      "transaction/solanaPayUrl for their wallet." % p["id"])
@@ -380,7 +445,8 @@ def demo_proposal():
 # ---------------------------------------------------------- slash command
 
 def slash(raw):
-    """/greenlight [status|approve [id]|reject [id]|receipts|cap]: human-typed approval for non-Desktop surfaces."""
+    """/greenlight [status|demo|approve [id]|reject [id]|done [id]|receipts]: human-typed controls for the
+    terminal and messaging chats."""
     parts = (raw or "").split()
     verb = parts[0].lower() if parts else "status"
     pid = parts[1] if len(parts) > 1 else None
@@ -388,16 +454,21 @@ def slash(raw):
         if verb == "demo":
             d = demo_proposal()
             return ("Demo proposal %s created from a live quote. Approve or reject it in the Greenlight pane, or "
-                    "type /greenlight approve %s. Demo proposals never release a transaction.\n%s" % (d["proposal_id"], d["proposal_id"], d["summary"]))
-        if verb in ("approve", "reject"):
+                    "type /greenlight approve %s. Demo proposals never release a transaction.\n%s"
+                    % (d["proposal_id"], d["proposal_id"], d["summary"]))
+        if verb in ("approve", "reject", "done"):
             if not pid:
-                items = pending()["pending"]
+                data = pending()
+                items = data["approved"] if verb == "done" else data["pending"]
                 if len(items) != 1:
-                    return "Give a proposal id: /greenlight %s <id> (%d pending)." % (verb, len(items))
+                    return "Give a proposal id: /greenlight %s <id> (%d candidates)." % (verb, len(items))
                 pid = items[0]["id"]
             if verb == "reject":
                 reject(pid)
                 return "Rejected %s. Nothing was released." % pid
+            if verb == "done":
+                dismiss(pid)
+                return "Marked %s as done." % pid
             r = approve(pid)
             if r.get("demo"):
                 return "Approved demo %s. The flow was real, but demo proposals never release a transaction." % pid

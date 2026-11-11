@@ -13,10 +13,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:  # POSIX advisory locking; best effort elsewhere
+try:  # POSIX advisory locking
     import fcntl
 except ImportError:  # pragma: no cover
     fcntl = None
+try:  # Windows byte-range locking
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
 _LOCK = threading.RLock()
 _GETTER = None
@@ -26,6 +30,7 @@ DEFAULTS = {
     "daily_cap_usd": 0.0,  # 0 = no daily cap
     "max_trade_usd": 0.0,  # 0 = no per-trade limit
     "proposal_ttl_minutes": 10,
+    "release_window_minutes": 30.0,
     "max_quote_drift_pct": 1.0,
     "default_wallet": "",
     "allowed_assets": "",
@@ -76,30 +81,66 @@ def _empty():
     return {"version": 1, "proposals": {}, "receipts": []}
 
 
+def _lock_file(f):
+    if fcntl:
+        fcntl.flock(f, fcntl.LOCK_EX)
+    elif msvcrt:  # pragma: no cover
+        f.seek(0)
+        while True:
+            try:
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+                return
+            except OSError:
+                time.sleep(0.05)
+
+
+def _unlock_file(f):
+    if fcntl:
+        fcntl.flock(f, fcntl.LOCK_UN)
+    elif msvcrt:  # pragma: no cover
+        try:
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+
+
+def _read_state(path):
+    """Load state. A file that cannot be parsed is set aside (never overwritten) and a fresh one started."""
+    try:
+        st = json.loads(path.read_text())
+        if not isinstance(st, dict):
+            raise ValueError("state is not an object")
+    except FileNotFoundError:
+        st = _empty()
+    except (ValueError, OSError):
+        try:
+            os.replace(path, path.with_name("state.corrupt-%d.json" % int(time.time())))
+        except OSError:
+            pass
+        st = _empty()
+    st.setdefault("proposals", {})
+    st.setdefault("receipts", [])
+    return st
+
+
 @contextlib.contextmanager
 def transaction(write=True):
     with _LOCK:
         d = data_dir()
         d.mkdir(parents=True, exist_ok=True)
         with open(d / ".lock", "a+") as lock:
-            if fcntl:
-                fcntl.flock(lock, fcntl.LOCK_EX)
+            _lock_file(lock)
             try:
                 path = d / "state.json"
-                try:
-                    st = json.loads(path.read_text())
-                except (FileNotFoundError, ValueError):
-                    st = _empty()
-                st.setdefault("proposals", {})
-                st.setdefault("receipts", [])
+                st = _read_state(path)
                 yield st
                 if write:
                     tmp = path.with_suffix(".tmp")
                     tmp.write_text(json.dumps(st, indent=2, sort_keys=True))
                     os.replace(tmp, path)
             finally:
-                if fcntl:
-                    fcntl.flock(lock, fcntl.LOCK_UN)
+                _unlock_file(lock)
 
 
 def now():
@@ -150,8 +191,14 @@ def verify_chain(receipts):
 
 # -------------------------------------------------------------- accounting
 
+RETENTION_DAYS = 90  # housekeeping only: finished proposals older than this are dropped (receipts are kept)
+
+
 def expire_stale(st):
     t = now()
+    cutoff = t - RETENTION_DAYS * 86400
+    for pid in [k for k, p in st["proposals"].items() if p["status"] != "pending" and p.get("created_at_ts", t) < cutoff]:
+        del st["proposals"][pid]
     for p in st["proposals"].values():
         if p["status"] == "pending" and p["expires_at_ts"] <= t:
             p["status"] = "expired"

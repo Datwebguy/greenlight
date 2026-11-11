@@ -40,7 +40,7 @@ Usefulness, reliability, polish, creativity. No official weights found.
 - Spawns a short-lived `node` subprocess per SDK call with a fixed command line and JSON on stdin. It never runs a model-chosen command and never uses a shell.
 - Writes only to `<HERMES_HOME>/plugin-data/greenlight/` (proposals, receipts). Reads no credentials.
 
-**Testing evidence:** 21 automated tests (`python -m pytest tests`) covering approval gating, caps, receipts, drift refusal, the hook and the slash command; plus a live run against the xStocks API (propose then approve a $25 NVDAx buy).
+**Testing evidence:** 29 automated tests (`python -m pytest tests`) covering approval gating, limits, receipts and tamper detection, quote-drift refusal, concurrent approve/reject, the release window, both hooks, the slash command, the pane backend, demo mode and the vendored SDK; plus a live run against the xStocks API (propose then approve a $25 NVDAx buy).
 
 Add screenshots of the pane to the PR.
 

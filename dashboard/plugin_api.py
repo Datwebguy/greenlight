@@ -25,9 +25,9 @@ def _call(fn, *args):
     try:
         return fn(service, *args)
     except service.GreenlightError as e:
-        raise HTTPException(status_code=409, detail={"error": e.code, "message": e.message})
+        raise HTTPException(status_code=409, detail=e.message)
     except bridge.BridgeError as e:
-        raise HTTPException(status_code=502, detail={"error": e.code, "message": e.message})
+        raise HTTPException(status_code=502, detail=e.message)
 
 
 def _changed(pid):
@@ -57,6 +57,13 @@ async def approve(proposal_id: str):
 @router.post("/proposals/{proposal_id}/reject")
 async def reject(proposal_id: str):
     out = _call(lambda s, i: s.reject(i), proposal_id)
+    _changed(proposal_id)
+    return out
+
+
+@router.post("/proposals/{proposal_id}/done")
+async def done(proposal_id: str):
+    out = _call(lambda s, i: s.dismiss(i), proposal_id)
     _changed(proposal_id)
     return out
 

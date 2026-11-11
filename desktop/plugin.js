@@ -52,18 +52,21 @@ function Proposal({ p, busy, onApprove, onReject }) {
     jsx('div', { className: `text-[0.6875rem] ${muted}`, children: `Proposal ${p.id}. Approving releases an unsigned transaction only; Greenlight never signs.` }))
 }
 
-function Released({ p, ctx }) {
+function Released({ p, ctx, onDone }) {
+  const done = jsx(Button, { variant: 'outline', onClick: () => onDone(p.id), children: 'Done' })
   if (p.demo) {
-    return el('div', { className: 'flex flex-col gap-1 rounded-md border border-(--ui-stroke-secondary) p-3' },
+    return el('div', { className: 'flex flex-col gap-2 rounded-md border border-(--ui-stroke-secondary) p-3' },
       jsx('span', { className: 'text-sm font-medium', children: `Demo approved: ${p.side} ${p.asset}` }),
-      jsx('div', { className: `text-[0.6875rem] ${muted}`, children: 'The whole flow was real, but demo proposals never release a transaction.' }))
+      jsx('div', { className: `text-[0.6875rem] ${muted}`, children: 'The whole flow was real, but demo proposals never release a transaction.' }),
+      done)
   }
   return el('div', { className: 'flex flex-col gap-2 rounded-md border border-(--ui-accent) p-3' },
     jsx('span', { className: 'text-sm font-medium', children: `Approved: ${p.side} ${p.asset}` }),
     p.solanaPayUrl
       ? el('div', { className: 'flex gap-2' },
           jsx(Button, { onClick: () => ctx.os.openExternal(p.solanaPayUrl), children: 'Open in wallet' }),
-          jsx(CopyButton, { text: p.solanaPayUrl }))
+          jsx(CopyButton, { text: p.solanaPayUrl }),
+          done)
       : jsx('div', { className: `text-xs ${muted}`, children: 'No Solana Pay link; ask the agent for the unsigned transaction.' }),
     jsx('div', { className: `text-[0.6875rem] ${muted}`, children: 'Your wallet signs and sends. Ask the agent to check status with get_trade_status.' }))
 }
@@ -109,15 +112,19 @@ function Pane({ ctx }) {
       await ctx.rest(`/proposals/${id}/${verb}`, { method: 'POST', body: {} })
       host.notify({ kind: 'info', message: verb === 'approve' ? 'Greenlight: approved' : 'Greenlight: rejected' })
     } catch (e) {
-      const d = e && e.detail && e.detail.message
-      setError(d || String(e && e.message || e))
+      setError(String((e && (e.detail || e.message)) || e))
     } finally { setBusy(false); refresh() }
+  }
+
+  const markDone = async (id) => {
+    try { await ctx.rest(`/proposals/${id}/done`, { method: 'POST', body: {} }) } catch (e) { /* refresh below */ }
+    refresh()
   }
 
   const runDemo = async () => {
     setBusy(true); setError('')
     try { await ctx.rest('/demo', { method: 'POST', body: {} }) } catch (e) {
-      setError((e && e.detail && e.detail.message) || String((e && e.message) || e))
+      setError(String((e && (e.detail || e.message)) || e))
     } finally { setBusy(false); refresh() }
   }
 
@@ -132,7 +139,7 @@ function Pane({ ctx }) {
         jsx('div', { className: muted, children: 'No trades waiting. Ask Hermes: "Propose buying $25 of NVDAx".' }),
         jsx(Button, { variant: 'outline', disabled: busy, onClick: runDemo, children: 'Run demo (no wallet needed)' })),
     ...data.pending.map(p => jsx(Proposal, { key: p.id, p, busy, onApprove: act('approve'), onReject: act('reject') })),
-    ...data.approved.map(p => jsx(Released, { key: p.id, p, ctx })),
+    ...data.approved.map(p => jsx(Released, { key: p.id, p, ctx, onDone: markDone })),
     jsx(Receipts, { ctx }))
 }
 

@@ -275,3 +275,139 @@ def test_vendored_sdk_loads_without_network_or_npm():
     out = subprocess.run(["node", str(root / "sdk-bridge.js")], input='{"op":"nope"}', capture_output=True, text=True)
     assert json.loads(out.stdout)["error"]["code"] == "bad_op"  # reached the op switch, so the SDK loaded
     assert not (root / "node_modules").exists()
+
+
+# ---------------------------------------------------------------- audit coverage
+
+def test_inputs_are_forgiving(monkeypatch):
+    monkeypatch.delenv("GREENLIGHT_DAILY_CAP_USD")
+    out = json.loads(tools.propose_trade({"asset": "$nvdax", "amount": "$1,250.50", "side": " Buy ", "wallet": WALLET,
+                                          "pay_token": "usdc"}))
+    assert out["status"] == "pending_approval" and out["quote"]["amountIn"].startswith("1250.5")
+    assert propose(asset="NVDA")["status"] == "pending_approval"  # trailing x is optional
+    assert propose(amount=True)["error"] == "invalid_amount"
+    assert propose(amount="abc")["error"] == "invalid_amount"
+
+
+def test_bare_strips_only_one_x():
+    assert service._bare("BOXx") == "box" and service._bare("NVDAx") == "nvda" and service._bare("XOM") == "xom"
+
+
+def test_approval_does_not_hold_the_state_lock(env, monkeypatch):
+    import threading
+    import time as _t
+
+    pid = propose()["proposal_id"]
+    gate, entered = threading.Event(), threading.Event()
+    real = env.call
+
+    def slow(op, payload=None, timeout=45):
+        if op == "buildOrder":
+            entered.set()
+            gate.wait(5)
+        return real(op, payload, timeout)
+
+    monkeypatch.setattr(bridge, "call", slow)
+    t = threading.Thread(target=service.approve, args=(pid,))
+    t.start()
+    assert entered.wait(5)
+    started = _t.time()
+    service.pending()  # the pane polls while the network call is in flight
+    assert _t.time() - started < 1.0
+    gate.set()
+    t.join(5)
+    assert json.loads(tools.get_trade_status({"proposal_id": pid}))["status"] == "approved"
+
+
+def test_reject_during_approval_wins(env, monkeypatch):
+    import threading
+
+    pid = propose()["proposal_id"]
+    entered, gate = threading.Event(), threading.Event()
+    real = env.call
+
+    def slow(op, payload=None, timeout=45):
+        if op == "buildOrder":
+            entered.set()
+            gate.wait(5)
+        return real(op, payload, timeout)
+
+    monkeypatch.setattr(bridge, "call", slow)
+    box = {}
+
+    def run():
+        try:
+            service.approve(pid)
+        except service.GreenlightError as e:
+            box["err"] = e.code
+
+    t = threading.Thread(target=run)
+    t.start()
+    entered.wait(5)
+    service.reject(pid)
+    gate.set()
+    t.join(5)
+    assert box["err"] == "not_pending"
+    out = json.loads(tools.get_trade_status({"proposal_id": pid}))
+    assert out["status"] == "rejected" and "solanaPayUrl" not in out
+
+
+def test_release_window_and_done(monkeypatch):
+    pid = propose()["proposal_id"]
+    url = service.approve(pid)["solanaPayUrl"]
+    assert service.pending()["approved"][0]["id"] == pid and gl._gate("browser", {"u": url}) is None
+    service.dismiss(pid)
+    assert service.pending()["approved"] == []
+    assert gl._gate("browser", {"u": url})["action"] == "block"  # no longer an active release
+    assert gl._llm_context() is None
+
+    pid2 = propose()["proposal_id"]
+    service.approve(pid2)
+    monkeypatch.setenv("GREENLIGHT_RELEASE_WINDOW_MINUTES", "0.0001")
+    import time as _t
+    _t.sleep(0.05)
+    out = json.loads(tools.get_trade_status({"proposal_id": pid2}))
+    assert "solanaPayUrl" not in out and "window has ended" in out["note"]
+    assert service.pending()["approved"] == []
+
+
+def test_corrupt_state_is_set_aside_not_overwritten(tmp_path):
+    (tmp_path / "state.json").write_text("{not json")
+    propose()
+    assert list(tmp_path.glob("state.corrupt-*.json"))
+    assert json.loads((tmp_path / "state.json").read_text())["proposals"]
+
+
+def test_old_finished_proposals_are_pruned_but_receipts_kept(tmp_path):
+    pid = propose()["proposal_id"]
+    service.reject(pid)
+    p = tmp_path / "state.json"
+    s = json.loads(p.read_text())
+    s["proposals"][pid]["created_at_ts"] -= (state.RETENTION_DAYS + 1) * 86400
+    p.write_text(json.dumps(s))
+    service.pending()
+    s = json.loads(p.read_text())
+    assert pid not in s["proposals"] and s["receipts"] and state.verify_chain(s["receipts"])
+
+
+def test_done_route_and_error_text(env, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    root = Path(gl.__file__).parent
+    spec = importlib.util.spec_from_file_location("gl_plugin_api2", root / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    monkeypatch.setattr(api._core().bridge, "call", env.call)
+    app = FastAPI()
+    app.include_router(api.router)
+    c = TestClient(app)
+    pid = propose()["proposal_id"]
+    c.post("/proposals/%s/approve" % pid)
+    assert c.post("/proposals/%s/done" % pid).status_code == 200
+    assert c.get("/pending").json()["approved"] == []
+    bad = c.post("/proposals/%s/approve" % pid)
+    assert bad.status_code == 409 and isinstance(bad.json()["detail"], str)
