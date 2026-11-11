@@ -3,7 +3,7 @@ version: 0.1.0
 manifest_version: 2
 api_version: 1
 requires_hermes: ">=0.21.5"
-description: Review and approve every xStocks trade before anything is sent. See the price and risk, approve in one click, and keep a tamper-proof history. Your wallet confirms the trade, so Greenlight never holds your keys.
+description: Greenlight is a Hermes Agent plugin that puts you in control of xStocks trading. Hermes can prepare a trade, but nothing is sent until you approve it. See the price, fees and risk first, then confirm in your own wallet. Greenlight never holds your keys.
 author: Datwebguy
 license: MIT
 homepage: https://github.com/Datwebguy/greenlight
