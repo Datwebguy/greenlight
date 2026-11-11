@@ -508,3 +508,80 @@ def test_stale_stock_list_survives_a_blip(env, monkeypatch):
 
     monkeypatch.setattr(bridge, "call", blip)
     assert propose()["status"] == "pending_approval"
+
+
+# ------------------------------------------------------------------ QR code for the wallet link
+
+def _finder_ok(rows, x0, y0):
+    ring = ["1111111", "1000001", "1011101", "1011101", "1011101", "1000001", "1111111"]
+    return all(rows[y0 + dy][x0:x0 + 7] == ring[dy] for dy in range(7))
+
+
+def test_qr_structure_and_sizes():
+    from greenlight import qr
+
+    for text in ("hi", "x" * 100, "solana:https%3A%2F%2Fxstocker.com%2Fagent%2Fpay%3Fasset%3DNVDAx" + "a" * 120):
+        for ecl in ("L", "M"):
+            rows = qr.encode(text, ecl)
+            n = len(rows)
+            assert (n - 17) % 4 == 0 and all(len(r) == n for r in rows)
+            assert _finder_ok(rows, 0, 0) and _finder_ok(rows, n - 7, 0) and _finder_ok(rows, 0, n - 7)
+    with pytest.raises(ValueError):
+        qr.encode("x" * 5000)
+
+
+def test_qr_round_trips_with_a_real_scanner():
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    from greenlight import qr
+
+    det = cv2.QRCodeDetector()
+    for text in ("hello", "solana:https%3A%2F%2Fxstocker.com%2Fagent%2Fpay%3Fasset%3DNVDAx%26amount%3D25%26side%3Dbuy" * 2):
+        rows, scale, quiet = qr.encode(text, "M"), 8, 4
+        n = len(rows)
+        img = np.full(((n + 2 * quiet) * scale,) * 2, 255, np.uint8)
+        for y, r in enumerate(rows):
+            for x, c in enumerate(r):
+                if c == "1":
+                    img[(y + quiet) * scale:(y + quiet + 1) * scale, (x + quiet) * scale:(x + quiet + 1) * scale] = 0
+        assert det.detectAndDecode(img)[0] == text
+
+
+def test_qr_only_for_an_active_real_approval():
+    from greenlight import qr
+
+    pid = propose()["proposal_id"]
+    with pytest.raises(service.GreenlightError):  # still pending: no link, so no code
+        service.qr_for(pid)
+    url = service.approve(pid)["solanaPayUrl"]
+    out = service.qr_for(pid)
+    assert out["rows"] == qr.encode(url, "M") and out["size"] == len(out["rows"])
+    service.dismiss(pid)
+    with pytest.raises(service.GreenlightError):  # done: link no longer active
+        service.qr_for(pid)
+    d = service.demo_proposal()["proposal_id"]
+    service.approve(d)
+    with pytest.raises(service.GreenlightError):  # practice trades never have a link
+        service.qr_for(d)
+
+
+def test_qr_route(env, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    root = Path(gl.__file__).parent
+    spec = importlib.util.spec_from_file_location("gl_plugin_api3", root / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    monkeypatch.setattr(api._core().bridge, "call", env.call)
+    app = FastAPI()
+    app.include_router(api.router)
+    c = TestClient(app)
+    pid = propose()["proposal_id"]
+    assert c.get("/proposals/%s/qr" % pid).status_code == 409
+    c.post("/proposals/%s/approve" % pid)
+    ok = c.get("/proposals/%s/qr" % pid)
+    assert ok.status_code == 200 and ok.json()["rows"] and set("".join(ok.json()["rows"])) <= {"0", "1"}

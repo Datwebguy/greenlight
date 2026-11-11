@@ -54,7 +54,36 @@ function Proposal({ p, busy, onApprove, onReject }) {
     jsx('div', { className: `text-[0.6875rem] ${muted}`, children: 'Approving gives you a link to confirm this trade in your own wallet. Greenlight never has your keys or your funds.' }))
 }
 
+function QrCode({ rows }) {
+  // Wallet apps need dark modules on a light background, so these two colours are fixed on purpose.
+  const n = rows.length
+  const q = 3
+  let d = ''
+  rows.forEach((r, y) => {
+    let x = 0
+    while (x < n) {
+      if (r[x] === '1') {
+        let e = x
+        while (e < n && r[e] === '1') e++
+        d += `M${x + q} ${y + q}h${e - x}v1h-${e - x}z`
+        x = e
+      } else x++
+    }
+  })
+  const side = n + q * 2
+  return jsxs('svg', {
+    viewBox: `0 0 ${side} ${side}`, width: 150, height: 150, role: 'img', shapeRendering: 'crispEdges',
+    'aria-label': 'QR code for the wallet link', style: { borderRadius: 8, flex: 'none' },
+    children: [jsx('rect', { width: side, height: side, fill: '#ffffff' }), jsx('path', { d, fill: '#000000' })]
+  })
+}
+
 function Released({ p, ctx, onDone }) {
+  const [qrRows, setQrRows] = useState(null)
+  useEffect(() => {
+    if (p.demo || !p.solanaPayUrl) return
+    ctx.rest(`/proposals/${p.id}/qr`).then(r => setQrRows(r.rows)).catch(() => {})
+  }, [ctx, p.id, p.demo, p.solanaPayUrl])
   const done = jsx(Button, { variant: 'outline', onClick: () => onDone(p.id), children: 'All done' })
   if (p.demo) {
     return el('div', { className: 'flex flex-col gap-2 rounded-md border border-(--ui-stroke-secondary) p-3' },
@@ -70,6 +99,9 @@ function Released({ p, ctx, onDone }) {
           jsx(CopyButton, { text: p.solanaPayUrl }),
           done)
       : jsx('div', { className: `text-xs ${muted}`, children: 'No wallet link was available. Ask Hermes for the transaction instead.' }),
+    qrRows && el('div', { className: 'flex items-center gap-3' },
+      jsx(QrCode, { rows: qrRows }),
+      jsx('div', { className: `text-xs ${muted}`, children: 'Or scan this with your phone\'s wallet to confirm the trade.' })),
     jsx('div', { className: `text-[0.6875rem] ${muted}`, children: 'Open the link in your wallet to confirm the trade. Greenlight never signs or sends anything for you.' }))
 }
 

@@ -68,6 +68,11 @@ async def done(proposal_id: str):
     return out
 
 
+@router.get("/proposals/{proposal_id}/qr")
+async def qr_code(proposal_id: str):
+    return _call(lambda s, i: s.qr_for(i), proposal_id)
+
+
 @router.post("/demo")
 async def demo():
     out = _call(lambda s: s.demo_proposal())

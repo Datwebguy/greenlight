@@ -14,6 +14,7 @@ Greenlight adds a safety step to trading xStocks (tokenized US stocks on Solana,
 - **Live prices.** Every trade is checked against the live xStocks service before you see it.
 - **Protection that stays out of the way.** Daily and per-trade limits are optional and off until you set them.
 - **A history you can trust.** Every decision is saved in a record that shows if anything was changed.
+- **Easy wallet hand-off.** Open the link on your computer, or scan the QR code with your phone's wallet.
 - **Works where you do.** The Hermes Desktop window, plus simple `/greenlight` commands in the terminal and chat apps.
 
 ## See it
@@ -40,7 +41,7 @@ Just talk to Hermes:
 
 > Buy $25 of NVDAx
 
-Hermes sets up the trade and the Greenlight window opens. Review it, then press **Approve** (or **Reject**). After approving, open the link to confirm the trade in your wallet, then press **All done**.
+Hermes sets up the trade and the Greenlight window opens. Review it, then press **Approve** (or **Reject**). After approving, open the link in your wallet (or scan the QR code with your phone's wallet) to confirm the trade, then press **All done**.
 
 Prefer typing? Use these anywhere you chat with Hermes:
 
@@ -138,7 +139,7 @@ sequenceDiagram
 **Development**
 ```bash
 pip install pytest fastapi httpx pyyaml
-python -m pytest tests                  # 29 tests, no network needed
+python -m pytest tests                  # 37 tests, no network needed
 hermes plugins validate . --install-deps
 ```
 Validated with `hermes plugins validate` and `hermes plugins doctor` on Hermes v0.23.1.

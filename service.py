@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 
-from . import bridge, risk, state
+from . import bridge, qr, risk, state
 
 _B58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _TICKER = re.compile(r"^[A-Za-z0-9]{1,24}$")
@@ -433,6 +433,19 @@ def llm_context():
         lines.append("Proposal %s was approved by the user; call get_trade_status to fetch the unsigned "
                      "transaction/solanaPayUrl for their wallet." % p["id"])
     return "Greenlight:\n" + "\n".join(lines) if lines else None
+
+
+def qr_for(proposal_id):
+    """QR code of the wallet link, only while an approved, real trade's link is still active."""
+    with state.transaction(write=False) as st:
+        p = st["proposals"].get(proposal_id)
+        if not p or p.get("demo") or not _release_active(p):
+            raise GreenlightError("not_found", "There's no active wallet link for that trade.")
+        url = (p.get("release") or {}).get("solanaPayUrl")
+    if not url:
+        raise GreenlightError("no_link", "No wallet link was available for this trade.")
+    rows = qr.encode(url, "M")
+    return {"size": len(rows), "rows": rows}
 
 
 def demo_proposal():
