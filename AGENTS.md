@@ -5,16 +5,16 @@ You are building the Greenlight Hermes Agent plugin.
 ## First step
 Read every markdown file in this repository before writing any code:
 - README.md
-- PRODUCT.md
-- PROJECT.md
-- RESOURCES.md
-- ARCHITECTURE.md
-- TOOLS.md
-- DESKTOP_PANE.md
-- CATALOG_SUBMISSION.md
+- docs/product.md
+- docs/hackathon/project.md
+- docs/resources.md
+- docs/architecture.md
+- docs/tools.md
+- docs/desktop-pane.md
+- docs/hackathon/catalog-submission.md
 - skills/greenlight/SKILL.md
-- DEMO.md
-- SUBMISSION.md
+- docs/hackathon/demo.md
+- docs/hackathon/submission.md
 
 ## Hard rules
 - Do not list Claude, Anthropic, or any Claude model as author or co-author in commits, README, plugin.yaml, catalog entry, or any other file.

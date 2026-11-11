@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/banner.png" alt="Greenlight: explicit approval for xStocks trades inside Hermes Agent" width="100%"></p>
+
 # Greenlight
 
 **Explicit approval for xStocks trades inside Hermes Agent.**
@@ -15,6 +17,15 @@ Greenlight turns a trade request into a simulated proposal with a risk score, su
 - **Your guardrails, your rules.** Optional daily cap, per-trade limit, ticker allowlist and drift limit. Nothing is capped unless you say so.
 - **Tamper-evident receipts.** Every decision is written to a hash-chained local log you can verify at any time.
 - **Non-custodial by design.** Your wallet signs and sends. Greenlight only hands you an unsigned `solanaPayUrl`.
+
+## Screenshots
+| Approval pane | After approval |
+|---|---|
+| ![Approval pane with quote, risk score, daily cap and Approve / Reject](assets/screenshots/approval-pane.png) | ![Approved state with Open in wallet, Copy link and Done](assets/screenshots/approved-state.png) |
+
+![The /greenlight slash command: status, demo, approve and receipts](assets/screenshots/slash-command.png)
+
+*Pane images are rendered from the plugin's own `desktop/plugin.js` with live xStocks quote data; the terminal image is real `/greenlight` output.*
 
 ## Try it in 60 seconds
 No wallet and no funds needed. Install, enable, then run `/greenlight demo` or click **Run demo** in the pane. You get a live NVDAx quote, a risk score and the approval pane. Approving a demo writes a real receipt and releases nothing.
@@ -133,7 +144,7 @@ hermes plugins validate . --install-deps
 ```
 Validated with `hermes plugins validate` and `hermes plugins doctor` on Hermes v0.23.1. The tests cover approval gating, limits, receipts and tamper detection, quote-drift refusal, concurrency during approval, the release window, the hooks, the slash command, the pane backend and the vendored SDK.
 
-Project layout and design notes: [ARCHITECTURE.md](ARCHITECTURE.md), [TOOLS.md](TOOLS.md), [DESKTOP_PANE.md](DESKTOP_PANE.md).
+Design notes: [architecture](docs/architecture.md), [tools](docs/tools.md), [desktop pane](docs/desktop-pane.md), [product](docs/product.md).
 
 ## Links
 - [xStocker Agent SDK](https://www.npmjs.com/package/@xstocker/agent-sdk)

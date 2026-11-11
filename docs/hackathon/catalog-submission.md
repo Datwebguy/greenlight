@@ -10,6 +10,3 @@
 
 ## Guide
 https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/plugins/catalog-submission.md
-
-## Author rule
-Do not list Claude or any Anthropic model as author or co-author.

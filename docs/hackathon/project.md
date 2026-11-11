@@ -23,6 +23,3 @@ Ship a complete, validated Hermes plugin that can be submitted to the plugin cat
 3. Desktop approval pane
 4. Caps, receipts, skill, gating
 5. Validation, README, demo, catalog PR
-
-## Author note
-Do not use Claude (or any Anthropic model) as author or co-author in commits, README, or catalog entry.

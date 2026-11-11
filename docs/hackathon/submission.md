@@ -9,9 +9,9 @@ Source: Nous Research "Hermes Agent Plugin Hackathon" announcement, the Hermes c
 |---|---|---|
 | 1 | Public GitHub repository | Repo exists; confirm it is public |
 | 2 | Plugin loads and passes `hermes plugins validate . --install-deps` | Passed on Hermes v0.23.1 (all checks green); `hermes plugins doctor . --ci` also passes |
-| 3 | Demo video, strictly under 90 seconds, shows the plugin working | Script in DEMO.md; you record it |
+| 3 | Demo video, strictly under 90 seconds, shows the plugin working | Script in docs/hackathon/demo.md; you record it |
 | 4 | Video posted on X, tagging @NousResearch | You post it |
-| 5 | Catalog PR to NousResearch/hermes-agent adding `plugin-catalog/greenlight.yaml`, full 40-char SHA | Draft in `submission/greenlight.yaml` |
+| 5 | Catalog PR to NousResearch/hermes-agent adding `plugin-catalog/greenlight.yaml`, full 40-char SHA | Draft in `docs/hackathon/entry/greenlight.yaml` |
 | 6 | Entry form with BOTH links (catalog PR link and the X video link) | You submit it |
 
 An unmerged catalog PR does not block submitting the form; it only needs to be open.
