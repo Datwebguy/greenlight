@@ -144,14 +144,11 @@ hermes plugins validate . --install-deps
 ```
 Validated with `hermes plugins validate` and `hermes plugins doctor` on Hermes v0.23.1. The tests cover approval gating, limits, receipts and tamper detection, quote-drift refusal, concurrency during approval, the release window, the hooks, the slash command, the pane backend and the vendored SDK.
 
-Design notes: [architecture](docs/architecture.md), [tools](docs/tools.md), [desktop pane](docs/desktop-pane.md), [product](docs/product.md).
-
 ## Links
 - [xStocker Agent SDK](https://www.npmjs.com/package/@xstocker/agent-sdk)
 - [xStocks docs](https://docs.xstocks.fi)
 - [Hermes plugin guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/plugins/index.md)
 - [Hermes Desktop Plugin SDK](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/desktop-plugin-sdk.md)
-- [Catalog submission guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/plugins/catalog-submission.md)
 
 ## License
 MIT. See [LICENSE](LICENSE).
