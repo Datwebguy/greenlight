@@ -5,6 +5,7 @@ import pytest
 import greenlight as gl
 from greenlight import bridge, service, state, tools
 
+REAL_CALL = bridge.call  # the shared fixture swaps bridge.call for a fake; some tests need the real one
 WALLET = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
 
 
@@ -411,3 +412,99 @@ def test_done_route_and_error_text(env, monkeypatch):
     assert c.get("/pending").json()["approved"] == []
     bad = c.post("/proposals/%s/approve" % pid)
     assert bad.status_code == 409 and isinstance(bad.json()["detail"], str)
+
+
+# ------------------------------------------------- no Node.js needed, retry, stale list
+
+class _Resp:
+    def __init__(self, body, status=200):
+        self.status, self._b = status, json.dumps(body).encode()
+
+    def read(self):
+        return self._b
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_works_without_node(monkeypatch):
+    monkeypatch.setattr(bridge, "call", REAL_CALL)
+    import urllib.error
+    import urllib.request
+
+    seen = []
+
+    def fake_urlopen(req, timeout=30):
+        seen.append((req.get_method(), req.full_url, req.data))
+        if req.full_url.endswith("assets.json"):
+            return _Resp({"assets": [{"symbol": "NVDAx", "mint": "m"}], "payTokens": [{"symbol": "USDC"}]})
+        if req.full_url.endswith("/agent/build-order"):
+            return _Resp({"status": "ready", "transaction": "T", "details": {"expectedOut": "1 NVDAx"}})
+        return _Resp({"status": "confirmed", "signature": "S", "tx": ""})
+
+    monkeypatch.setattr(bridge, "_node_path", {"checked": True, "path": None})  # pretend Node.js is not installed
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert bridge.get_assets()["assets"][0]["symbol"] == "NVDAx"
+    assert bridge.build_order(WALLET, "NVDAx", 25, "buy", "USDC")["status"] == "ready"
+    assert bridge.order_status("S")["status"] == "confirmed"
+    methods = [(m, u.split("xstocker.com")[1]) for m, u, d in seen]
+    assert methods == [("GET", "/agent/assets.json"), ("POST", "/agent/build-order"), ("GET", "/agent/order/S")]
+    body = json.loads(seen[1][2])
+    assert body == {"wallet": WALLET, "asset": "NVDAx", "amount": 25, "pay_token": "USDC", "side": "buy"}
+
+
+def test_direct_path_errors_are_plain(monkeypatch):
+    monkeypatch.setattr(bridge, "call", REAL_CALL)
+    import urllib.error
+    import urllib.request
+
+    monkeypatch.setattr(bridge, "_node_path", {"checked": True, "path": None})
+    monkeypatch.setattr(bridge, "RETRY_WAIT", 0)
+
+    def busy(req, timeout=30):
+        raise urllib.error.HTTPError(req.full_url, 429, "x", {}, __import__("io").BytesIO(b'{"message":"slow down"}'))
+
+    monkeypatch.setattr(urllib.request, "urlopen", busy)
+    with pytest.raises(bridge.BridgeError) as e:
+        bridge.get_assets()
+    assert e.value.code == "busy" and "busy" in e.value.message
+
+    def down(req, timeout=30):
+        raise urllib.error.URLError("no route")
+
+    monkeypatch.setattr(urllib.request, "urlopen", down)
+    with pytest.raises(bridge.BridgeError) as e:
+        bridge.get_assets()
+    assert e.value.code == "unreachable" and "internet connection" in e.value.message
+
+
+def test_busy_service_is_retried_once(monkeypatch):
+    monkeypatch.setattr(bridge, "call", REAL_CALL)
+    calls = {"n": 0}
+
+    def flaky(op, payload):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise bridge.BridgeError("busy", "busy")
+        return {"ok": True}
+
+    monkeypatch.setattr(bridge, "_node_path", {"checked": True, "path": None})
+    monkeypatch.setattr(bridge, "_call_python", flaky)
+    monkeypatch.setattr(bridge, "RETRY_WAIT", 0)
+    assert bridge.call("assets") == {"ok": True} and calls["n"] == 2
+
+
+def test_stale_stock_list_survives_a_blip(env, monkeypatch):
+    assert propose()["status"] == "pending_approval"  # fills the cache
+    service._assets_cache["ts"] = 0.0  # expired
+
+    def blip(op, payload=None, timeout=45):
+        if op == "assets":
+            raise bridge.BridgeError("busy", "busy")
+        return env.call(op, payload, timeout)
+
+    monkeypatch.setattr(bridge, "call", blip)
+    assert propose()["status"] == "pending_approval"

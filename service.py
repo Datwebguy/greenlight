@@ -62,8 +62,13 @@ def _num(value):
 
 def _resolve_asset(asset):
     if time.time() - _assets_cache["ts"] > 600 or not _assets_cache["data"]:
-        _assets_cache["data"] = bridge.get_assets()
-        _assets_cache["ts"] = time.time()
+        try:
+            _assets_cache["data"] = bridge.get_assets()
+            _assets_cache["ts"] = time.time()
+        except bridge.BridgeError:
+            if not _assets_cache["data"]:  # nothing cached yet: nothing to fall back on
+                raise
+            # the service blipped: keep using the last good stock list
     want = asset.strip().lower()
     for a in _assets_cache["data"].get("assets", []):
         sym = a["symbol"].lower()

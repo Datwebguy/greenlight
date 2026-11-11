@@ -32,7 +32,7 @@ Greenlight adds a safety step to trading xStocks (tokenized US stocks on Solana,
    hermes plugins enable greenlight
    ```
 2. **Switch it on** in Hermes Desktop under Capabilities > Plugins.
-3. **Add your wallet address** in Greenlight's settings (your public address only, never a private key or seed phrase). You'll need Node.js 18 or newer installed on your computer.
+3. **Add your wallet address** in Greenlight's settings (your public address only, never a private key or seed phrase).
 4. **Try a practice trade** with no wallet or funds: type `/greenlight practice`, or press **Try a practice trade** in the Greenlight window.
 
 ## Using Greenlight
@@ -79,14 +79,16 @@ Open Greenlight's settings page in Hermes Desktop (Capabilities > Plugins).
 
 **Can Hermes trade without me?** No. Every trade waits for your approval.
 
+**Do I need to install anything else?** No. Greenlight works out of the box. If Node.js 18 or newer happens to be installed, it uses the official xStocker SDK for prices; if not, it talks to the same xStocks service directly.
+
 **Where is my data?** On your computer, in Hermes' plugin data folder. Nothing is sent anywhere except price requests to the xStocks service.
 
 <details>
 <summary><strong>Transparency</strong></summary>
 
 - **Network:** talks to `api.xstocker.com` and `xstocker.com` through the official xStocker SDK. No other services, no telemetry.
-- **Code:** the SDK is bundled unmodified (`vendor/agent-sdk`, with its checksums in `VENDORED.md`). Nothing is installed or downloaded while the plugin runs, and it never updates itself.
-- **Processes:** a short-lived Node.js process per price request, started with a fixed command (`node sdk-bridge.js`). No shell, and never a command chosen by the AI.
+- **Code:** the official xStocker SDK is bundled unmodified (`vendor/agent-sdk`, with its checksums in `VENDORED.md`) and used when Node.js 18+ is installed. Without Node.js, Greenlight calls the same public xStocks endpoints directly using Python's standard library. Either way, nothing is installed or downloaded while the plugin runs, and it never updates itself.
+- **Processes:** with Node.js, a short-lived process per price request, started with a fixed command (`node sdk-bridge.js`). No shell, and never a command chosen by the AI. Without Node.js, no extra process is started.
 - **Files:** writes only to `<HERMES_HOME>/plugin-data/greenlight/`. Reads no credentials.
 </details>
 
@@ -124,6 +126,8 @@ sequenceDiagram
     H-->>U: link; wallet signs and sends
     G-->>G: write hash-chained receipt
 ```
+
+**Price source.** `bridge.py` uses the bundled official SDK through `sdk-bridge.js` when Node.js 18+ is present, and otherwise calls the same three public endpoints (`assets.json`, `build-order`, `order/{signature}`) directly. A busy service is retried once, and the last good stock list is reused if it briefly fails.
 
 **Simulation.** Each proposal is built against the live xStocks API through the official SDK, giving a real route, expected output, fee and slippage. On approval the order is rebuilt (unsigned transactions are short-lived) and release is refused if the fresh quote is worse than the approved one by more than `max_quote_drift_pct`.
 
