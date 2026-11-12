@@ -18,9 +18,15 @@ Greenlight adds a safety step to trading xStocks (tokenized US stocks on Solana,
 - **Works where you do.** The Hermes Desktop window, plus simple `/greenlight` commands in the terminal and chat apps.
 
 ## See it
-| Review the trade | After you approve |
-|---|---|
-| ![The Greenlight window: price, fees, risk check and your daily limit, with Approve and Reject buttons](assets/screenshots/approval-pane.png) | ![After approving: open the link in your wallet to confirm](assets/screenshots/approved-state.png) |
+**Review the trade.** Price, fees, a simple risk check and your daily limit, with Approve and Reject.
+
+![The Greenlight window: price, fees, risk check and your daily limit, with Approve and Reject buttons](assets/screenshots/approval-pane.png)
+
+**After you approve.** Open the link in your wallet, or scan the QR code with your phone's wallet.
+
+![After approving: open the link in your wallet or scan the QR code to confirm](assets/screenshots/approved-state.png)
+
+**Prefer typing?** Use `/greenlight` in the terminal or a chat app.
 
 ![Type /greenlight in the terminal or a chat app](assets/screenshots/slash-command.png)
 
