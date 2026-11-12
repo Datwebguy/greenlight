@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+- Cleaner README on the Hermes Marketplace: screenshots stacked, tables and collapsible sections replaced with plain lists, flow shown as numbered steps.
+- Notes who can approve in shared chats.
+
 ## 0.1.0
 - First release.
 - Ask Hermes for an xStocks trade and review it in a clear window: price, fees, a simple risk check and your daily limit.

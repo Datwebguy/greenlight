@@ -51,27 +51,23 @@ Hermes sets up the trade and the Greenlight window opens. Review it, then press 
 
 Prefer typing? Use these anywhere you chat with Hermes:
 
-| Type | What it does |
-|---|---|
-| `/greenlight` | Shows trades waiting for you and today's limit |
-| `/greenlight approve` | Approves the waiting trade (add its id if there is more than one) |
-| `/greenlight reject` | Rejects it |
-| `/greenlight done` | Clears an approved trade once you've confirmed it in your wallet |
-| `/greenlight history` | Shows your recent activity |
-| `/greenlight practice` | Runs a practice trade |
+- `/greenlight`: Shows trades waiting for you and today's limit
+- `/greenlight approve`: Approves the waiting trade (add its id if there is more than one)
+- `/greenlight reject`: Rejects it
+- `/greenlight done`: Clears an approved trade once you've confirmed it in your wallet
+- `/greenlight history`: Shows your recent activity
+- `/greenlight practice`: Runs a practice trade
 
 ## Settings
 Open Greenlight's settings page in Hermes Desktop (Capabilities > Plugins).
 
-| Setting | What it does | Default |
-|---|---|---|
-| Your wallet address | Used when you don't name a wallet in your request | empty |
-| Daily limit (USD) | Greenlight won't set up trades beyond this total per day | none |
-| Per-trade limit (USD) | Greenlight won't set up a single trade above this amount | none |
-| Only allow these stocks | A list like `NVDAx, AAPLx` | any |
-| Price-change tolerance (%) | If the price gets worse than this before you approve, you get a fresh quote | 1 |
-| Time to decide (minutes) | How long a trade waits for your decision | 10 |
-| Time to confirm after approving (minutes) | How long the wallet link stays available | 30 |
+- **Your wallet address**: Used when you don't name a wallet in your request (default: empty)
+- **Daily limit (USD)**: Greenlight won't set up trades beyond this total per day (default: none)
+- **Per-trade limit (USD)**: Greenlight won't set up a single trade above this amount (default: none)
+- **Only allow these stocks**: A list like `NVDAx, AAPLx` (default: any)
+- **Price-change tolerance (%)**: If the price gets worse than this before you approve, you get a fresh quote (default: 1)
+- **Time to decide (minutes)**: How long a trade waits for your decision (default: 10)
+- **Time to confirm after approving (minutes)**: How long the wallet link stays available (default: 30)
 
 ## Your money and your keys
 - Greenlight **never holds your keys or your funds**, and it never signs or sends anything. Your own wallet does that.
@@ -90,51 +86,29 @@ Open Greenlight's settings page in Hermes Desktop (Capabilities > Plugins).
 
 **Where is my data?** On your computer, in Hermes' plugin data folder. Nothing is sent anywhere except price requests to the xStocks service.
 
-<details>
-<summary><strong>Transparency</strong></summary>
-
+## Transparency
 - **Network:** talks to `api.xstocker.com` and `xstocker.com` through the official xStocker SDK. No other services, no telemetry.
 - **Code:** the official xStocker SDK is bundled unmodified (`vendor/agent-sdk`, with its checksums in `VENDORED.md`) and used when Node.js 18+ is installed. Without Node.js, Greenlight calls the same public xStocks endpoints directly using Python's standard library. Either way, nothing is installed or downloaded while the plugin runs, and it never updates itself.
 - **Processes:** with Node.js, a short-lived process per price request, started with a fixed command (`node sdk-bridge.js`). No shell, and never a command chosen by the AI. Without Node.js, no extra process is started.
 - **Files:** writes only to `<HERMES_HOME>/plugin-data/greenlight/`. Reads no credentials.
-</details>
+- **Who can approve:** whoever uses the Greenlight window, or anyone allowed to use the chat where `/greenlight approve` is typed. Trades are always confirmed in the user's own wallet.
 
-<details>
-<summary><strong>For developers</strong></summary>
-
+## For developers
 **What Greenlight registers**
 
-| Surface | Details |
-|---|---|
-| Tools | `propose_trade` (simulate and create a pending trade, never returns a transaction), `get_trade_status` (look up a trade or signature; the unsigned link appears only after approval), `list_receipts` (recent receipts with chain verification) |
-| Hooks | `pre_tool_call` blocks other tools from carrying an xStocks order link no approved trade released; `pre_llm_call` keeps the agent aware of pending and approved trades |
-| Command | `/greenlight` |
-| Desktop | approval pane, status-bar chip, notifications |
-| Skill | `greenlight` (teaches the agent the flow and how to talk to users) |
+- Tools: `propose_trade` (simulate and create a pending trade, never returns a transaction), `get_trade_status` (look up a trade or signature; the unsigned link appears only after approval), `list_receipts` (recent receipts with chain verification)
+- Hooks: `pre_tool_call` blocks other tools from carrying an xStocks order link no approved trade released; `pre_llm_call` keeps the agent aware of pending and approved trades
+- Command: `/greenlight`
+- Desktop: approval pane, status-bar chip, notifications
+- Skill: `greenlight` (teaches the agent the flow and how to talk to users)
 
 **Flow**
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant H as Hermes agent
-    participant G as Greenlight
-    participant X as xStocks API
-    U->>H: "Buy $25 of NVDAx"
-    H->>G: propose_trade
-    G->>X: build order (simulation)
-    X-->>G: quote + unsigned tx
-    Note over G: keeps only the quote, discards the tx
-    G-->>H: summary + risk, no transaction
-    G-->>U: Desktop window / chip / notification
-    U->>G: Approve (window or /greenlight approve)
-    G->>X: rebuild order fresh
-    G-->>G: refuse release if the quote drifted
-    G-->>H: get_trade_status releases solanaPayUrl
-    H-->>U: link; wallet signs and sends
-    G-->>G: write hash-chained receipt
-```
-
-**Price source.** `bridge.py` uses the bundled official SDK through `sdk-bridge.js` when Node.js 18+ is present, and otherwise calls the same three public endpoints (`assets.json`, `build-order`, `order/{signature}`) directly. A busy service is retried once, and the last good stock list is reused if it briefly fails.
+1. You ask Hermes for a trade. Hermes calls `propose_trade`.
+2. Greenlight builds the order against the live xStocks service as a simulation, keeps only the quote and discards the transaction, and shows you a summary and risk check. No transaction is released.
+3. You approve in the Desktop window or with `/greenlight approve`.
+4. Greenlight rebuilds the order fresh and refuses to release it if the quote drifted.
+5. `get_trade_status` releases the `solanaPayUrl` (and the window shows a QR code). Your wallet signs and sends.
+6. Greenlight writes a hash-chained receipt.
 
 **Simulation.** Each proposal is built against the live xStocks API through the official SDK, giving a real route, expected output, fee and slippage. On approval the order is rebuilt (unsigned transactions are short-lived) and release is refused if the fresh quote is worse than the approved one by more than `max_quote_drift_pct`.
 
@@ -149,7 +123,6 @@ python -m pytest tests                  # 37 tests, no network needed
 hermes plugins validate . --install-deps
 ```
 Validated with `hermes plugins validate` and `hermes plugins doctor` on Hermes v0.23.1.
-</details>
 
 ## Links
 - [xStocker Agent SDK](https://www.npmjs.com/package/@xstocker/agent-sdk)
